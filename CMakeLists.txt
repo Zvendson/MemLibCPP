@@ -38,16 +38,10 @@ set(MEMLIB_PRIVATE_SOURCES
 )
 
 if (WIN32)
-  list(APPEND MEMLIB_PUBLIC_HEADERS
-    code/public/memlib/os/windows.hpp
-  )
   list(APPEND MEMLIB_PRIVATE_SOURCES
     code/private/os/windows.cpp
   )
 elseif(UNIX)
-  list(APPEND MEMLIB_PUBLIC_HEADERS
-    code/public/memlib/os/linux.hpp
-  )
   list(APPEND MEMLIB_PRIVATE_SOURCES
     code/private/os/linux.cpp
   )
