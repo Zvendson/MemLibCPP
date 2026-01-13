@@ -20,46 +20,36 @@ target_include_directories(MemLib
 
 set(MEMLIB_PUBLIC_HEADERS
     code/public/memlib.hpp
-    code/public/memlib/address.hpp
     code/public/memlib/hook.hpp
     code/public/memlib/macros.hpp
-    code/public/memlib/path.hpp
-    code/public/memlib/process.hpp
+    code/public/memlib/memory.hpp
+    code/public/memlib/os.hpp
+    code/public/memlib/re_helper_macros.hpp
     code/public/memlib/scanner.hpp
     code/public/memlib/thread.hpp
 )
 
 set(MEMLIB_PRIVATE_SOURCES
-    code/private/address.cpp
     code/private/hook.cpp
     code/private/memlib.cpp
-    code/private/path.cpp
-    code/private/process.cpp
+    code/private/memory.cpp
     code/private/scanner.cpp
     code/private/thread.cpp
 )
 
 if (WIN32)
   list(APPEND MEMLIB_PUBLIC_HEADERS
-    code/public/memlib/os/windows/path.hpp
-    code/public/memlib/os/windows/process.hpp
-    code/public/memlib/os/windows/thread.hpp
+    code/public/memlib/os/windows.hpp
   )
   list(APPEND MEMLIB_PRIVATE_SOURCES
-    code/private/windows/path.cpp
-    code/private/windows/process.cpp
-    code/private/windows/thread.cpp
+    code/private/os/windows.cpp
   )
 elseif(UNIX)
   list(APPEND MEMLIB_PUBLIC_HEADERS
-    code/public/memlib/os/linux/path.hpp
-    code/public/memlib/os/linux/process.hpp
-    code/public/memlib/os/linux/thread.hpp
+    code/public/memlib/os/linux.hpp
   )
   list(APPEND MEMLIB_PRIVATE_SOURCES
-    code/private/linux/path.cpp
-    code/private/linux/process.cpp
-    code/private/linux/thread.cpp
+    code/private/os/linux.cpp
   )
 endif()
 
