@@ -30,6 +30,7 @@ set(MEMLIB_PUBLIC_HEADERS
 )
 
 set(MEMLIB_PRIVATE_SOURCES
+    code/private/internal.hpp
     code/private/hook.cpp
     code/private/memlib.cpp
     code/private/memory.cpp
