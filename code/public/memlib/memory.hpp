@@ -1,5 +1,6 @@
 #pragma once
 
+#include "macros.hpp"
 #include "os.hpp"
 
 #include <cstdint>
@@ -13,7 +14,7 @@
 #include <algorithm>
 #include <type_traits>
 
-#if defined(_WIN32)
+#if MEMLIB_IS_WINDOWS
     #ifndef WIN32_LEAN_AND_MEAN
         #define WIN32_LEAN_AND_MEAN
     #endif
@@ -24,14 +25,31 @@
 
     #include <windows.h>
     #include <psapi.h>
-#else
+#elif MEMLIB_IS_LINUX
 #endif
+#include <functional>
 
 namespace memlib
 {
     template <class T>
     constexpr bool is_trivially_memcpyable_v =
         std::is_trivially_copyable_v<T> && std::is_standard_layout_v<T>;
+
+    enum class section : uint8_t
+    {
+        text,
+        rdata,
+        data,
+        bss,
+        edata,
+        idata,
+        reloc,
+        rsrc,
+        tls,
+        pdata,
+        debug,
+        max
+    };
 
     struct section_info
     {
@@ -53,15 +71,27 @@ namespace memlib
         explicit operator bool() const noexcept { return start != nullptr && end != nullptr && start < end; }
     };
 
-    class module_info
+    struct module_info
     {
-    public:
         void*       base = nullptr;
         size_t      size = 0;
         std::string path{};
         std::string name{};
 
         explicit operator bool() const noexcept { return base != nullptr; }
+    };
+
+    struct scan_pattern
+    {
+        size_t  length = 0;
+        uint8_t bytes[256]{};
+        char    mask[256]{}; // 'x' = match, '?' = wildcard
+    };
+
+    struct span_pattern
+    {
+        const char* combo = nullptr;
+        section     section = section::text;
     };
 
     std::optional<region_info> query(void* p) noexcept;
@@ -77,6 +107,8 @@ namespace memlib
     bool is_readable(void* p, size_t bytes = 1) noexcept;
     bool is_writable(void* p, size_t bytes = 1) noexcept;
     bool is_executable(void* p, size_t bytes = 1) noexcept;
+
+    bool is_readable_protect(DWORD protect) noexcept;
 
     class address
     {
@@ -108,6 +140,31 @@ namespace memlib
         constexpr address operator+(value_type off) const noexcept { return add(off); }
         constexpr address operator-(value_type off) const noexcept { return sub(off); }
         constexpr value_type operator-(address rhs) const noexcept { return m_value - rhs.m_value; }
+        constexpr address& operator++() noexcept { ++m_value; return *this; }
+        constexpr address& operator--() noexcept { --m_value; return *this; }
+        constexpr address operator++(int) noexcept { address tmp = *this; ++m_value; return tmp; }
+        constexpr address operator--(int) noexcept { address tmp = *this; --m_value; return tmp; }
+
+        constexpr bool operator==(address rhs) const noexcept { return m_value == rhs.m_value; }
+        constexpr bool operator!=(address rhs) const noexcept { return m_value != rhs.m_value; }
+        constexpr bool operator< (address rhs) const noexcept { return m_value < rhs.m_value; }
+        constexpr bool operator<=(address rhs) const noexcept { return m_value <= rhs.m_value; }
+        constexpr bool operator> (address rhs) const noexcept { return m_value > rhs.m_value; }
+        constexpr bool operator>=(address rhs) const noexcept { return m_value >= rhs.m_value; }
+
+        constexpr bool operator==(value_type rhs) const noexcept { return m_value == rhs; }
+        constexpr bool operator!=(value_type rhs) const noexcept { return m_value != rhs; }
+        constexpr bool operator< (value_type rhs) const noexcept { return m_value < rhs; }
+        constexpr bool operator<=(value_type rhs) const noexcept { return m_value <= rhs; }
+        constexpr bool operator> (value_type rhs) const noexcept { return m_value > rhs; }
+        constexpr bool operator>=(value_type rhs) const noexcept { return m_value >= rhs; }
+
+        friend constexpr bool operator==(value_type lhs, address rhs) noexcept { return lhs == rhs.m_value; }
+        friend constexpr bool operator!=(value_type lhs, address rhs) noexcept { return lhs != rhs.m_value; }
+        friend constexpr bool operator< (value_type lhs, address rhs) noexcept { return lhs < rhs.m_value; }
+        friend constexpr bool operator<=(value_type lhs, address rhs) noexcept { return lhs <= rhs.m_value; }
+        friend constexpr bool operator> (value_type lhs, address rhs) noexcept { return lhs > rhs.m_value; }
+        friend constexpr bool operator>=(value_type lhs, address rhs) noexcept { return lhs >= rhs.m_value; }
 
     public:
         bool is_valid() const noexcept;
@@ -175,5 +232,33 @@ namespace memlib
 
     private:
         value_type m_value = 0;
+    };
+
+    bool parse_combo_pattern(const char* combo, scan_pattern& out) noexcept;
+
+    class scanner
+    {
+    public:
+        using callback = std::function<address (address addr)>;
+        using callback_any = std::function<address(size_t index, address addr)>;
+
+        scanner(const char* modulename = nullptr);
+
+        [[nodiscard]] inline bool is_valid() const noexcept { return m_module != nullptr; }
+        explicit operator bool() const noexcept { return m_module != nullptr; }
+
+        [[nodiscard]] address find(const scan_pattern& pattern, void* start, size_t length, int32_t offset = 0x0000) const noexcept;
+        [[nodiscard]] address find(const char*         combo  , void* start, size_t length, int32_t offset = 0x0000) const noexcept;
+
+        [[nodiscard]] address find(const scan_pattern& pattern, section sec, int32_t offset = 0x0000) const noexcept;
+        [[nodiscard]] address find(const char*         combo  , section sec, int32_t offset = 0x0000) const noexcept;
+
+    protected:
+        section_info m_sections[uint8_t(section::max)] = {};
+#if MEMLIB_IS_WINDOWS
+        HMODULE      m_module                          = nullptr;
+#elif MEMLIB_IS_LINUX
+        void*        m_module                          = nullptr;
+#endif
     };
 }

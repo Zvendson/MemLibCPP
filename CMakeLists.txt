@@ -25,7 +25,6 @@ set(MEMLIB_PUBLIC_HEADERS
     code/public/memlib/memory.hpp
     code/public/memlib/os.hpp
     code/public/memlib/re_helper_macros.hpp
-    code/public/memlib/scanner.hpp
     code/public/memlib/thread.hpp
 )
 
@@ -34,7 +33,6 @@ set(MEMLIB_PRIVATE_SOURCES
     code/private/hook.cpp
     code/private/memlib.cpp
     code/private/memory.cpp
-    code/private/scanner.cpp
     code/private/thread.cpp
 )
 
@@ -66,6 +64,7 @@ endif()
 
 target_link_libraries(MemLib
   PRIVATE
+    Dbghelp
     Zycore
     Zydis
     safetyhook::safetyhook
