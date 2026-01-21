@@ -1,7 +1,8 @@
 #include "memlib/macros.hpp"
+#include "memlib/os.hpp"
 #include "memlib/memory.hpp"
+#include "memlib/address.hpp"
 
-#include <Zydis/Zydis.h>
 #include <array>
 #include <algorithm>
 #include <cstdint>
@@ -115,77 +116,6 @@ namespace
         return true;
     }
 
-    constexpr std::array<sec_map_entry, uint8_t(section::max)> k_sec_map{ {
-        { ".text",  uint8_t(section::text),  5 },
-        { ".rdata", uint8_t(section::rdata), 6 },
-        { ".data",  uint8_t(section::data),  5 },
-        { ".idata", uint8_t(section::idata), 6 },
-        { ".reloc", uint8_t(section::reloc), 6 },
-        { ".pdata", uint8_t(section::pdata), 6 },
-        { ".bss",   uint8_t(section::bss),   4 },
-        { ".edata", uint8_t(section::edata), 6 },
-        { ".rsrc",  uint8_t(section::rsrc),  5 },
-        { ".tls",   uint8_t(section::tls),   4 },
-        { ".debug", uint8_t(section::debug), 6 },
-    } };
-
-    // Compare IMAGE_SECTION_HEADER::Name (8 bytes, not necessarily 0-terminated) to ASCII literal.
-    inline bool sec_name_equals_ci(const uint8_t name8[8], const char* s, size_t n) noexcept
-    {
-        if (!s || n == 0 || n > 8) return false;
-
-        for (size_t i = 0; i < n; ++i)
-        {
-            const uint8_t a = name8[i];
-            const uint8_t b = static_cast<uint8_t>(s[i]);
-
-            // ASCII case-fold
-            const uint8_t af = (a >= 'A' && a <= 'Z') ? (a | 0x20) : a;
-            const uint8_t bf = (b >= 'A' && b <= 'Z') ? (b | 0x20) : b;
-
-            if (af != bf)
-                return false;
-        }
-
-        // Optional: ensure the next byte isn't an extra letter (so ".textX" doesn't match ".text")
-        // For PE section names, this is rare but harmless to guard.
-        if (n < 8)
-        {
-            const uint8_t next = name8[n];
-            if (next != 0 && next != ' ') // PE names sometimes padded with zeros/spaces
-                return false;
-        }
-
-        return true;
-    }
-
-    inline uint8_t section_id_from_name(const uint8_t name8[8]) noexcept
-    {
-        for (const auto& e : k_sec_map)
-        {
-            if (sec_name_equals_ci(name8, e.name, e.len))
-                return e.id;
-        }
-        return 0xFF;
-    }
-
-    inline const IMAGE_NT_HEADERS* nt_headers_from_module(HMODULE mod) noexcept
-    {
-        if (!mod)
-            return nullptr;
-
-        const auto* base = reinterpret_cast<const uint8_t*>(mod);
-        const auto* dos  = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
-        if (dos->e_magic != IMAGE_DOS_SIGNATURE)
-            return nullptr;
-
-        const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
-        if (nt->Signature != IMAGE_NT_SIGNATURE)
-            return nullptr;
-
-        return nt;
-    }
-
     static inline bool is_readable_protect_win(DWORD protect) noexcept
     {
         if (protect & PAGE_GUARD)     return false;
@@ -208,37 +138,6 @@ namespace
 
 #elif MEMLIB_IS_LINUX
 #endif
-
-    ZydisDecoder& get_decoder()
-    {
-        static bool init = false;
-        static ZydisDecoder decoder;
-
-        if (!init)
-        {
-            #if MEMLIB_IS_64
-                ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_STACK_WIDTH_64);
-            #else
-                ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LEGACY_32, ZYDIS_STACK_WIDTH_32);
-            #endif
-        }
-
-        return decoder;
-    }
-
-
-
-    bool zydis_decode(void* p, ZydisDecodedInstruction& inst, ZydisDecodedOperand ops[ZYDIS_MAX_OPERAND_COUNT]) noexcept
-    {
-        if (!p)
-            return false;
-
-        if (!is_readable(p, ZYDIS_MAX_INSTRUCTION_LENGTH))
-            return false;
-
-        auto& decoder = get_decoder();
-        return ZYAN_SUCCESS(ZydisDecoderDecodeFull(&decoder, p, 16, &inst, ops));
-    }
 
 
 
@@ -501,6 +400,8 @@ namespace memlib
 #endif
     }
 
+
+
     std::optional<module_info> module_from_address(void* p) noexcept
     {
 #if MEMLIB_IS_WINDOWS
@@ -601,230 +502,6 @@ namespace memlib
         return has(p, prot::r);
     }
 
-#pragma region address
-    bool address::is_valid() const noexcept
-    {
-        if (!m_value)
-            return false;
-
-        return query(ptr()).has_value();
-    }
-
-
-
-    bool address::is_readable(size_t bytes) const noexcept
-    {
-        if (!m_value)
-            return false;
-
-        return memlib::is_readable(ptr(), bytes);
-    }
-
-
-
-    bool address::is_writable(size_t bytes) const noexcept
-    {
-        if (!m_value)
-            return false;
-
-        return memlib::is_writable(ptr(), bytes);
-    }
-
-
-
-    bool address::is_executable(size_t bytes) const noexcept
-    {
-        if (!m_value)
-            return false;
-
-        return memlib::is_executable(ptr(), bytes);
-    }
-
-
-
-    std::optional<module_info> address::module() const noexcept
-    {
-        if (!m_value)
-            return std::nullopt;
-
-        return module_from_address(ptr());
-    }
-
-
-
-    std::optional<section_info> address::section() const noexcept
-    {
-        if (!m_value)
-            return std::nullopt;
-
-        return section_from_address(ptr());
-    }
-
-
-
-    std::optional<region_info> address::region() const noexcept
-    {
-        if (!m_value)
-            return std::nullopt;
-
-        return query(ptr());
-    }
-
-
-
-    address address::dereference_pointer(size_t count) const noexcept
-    {
-        address cur = *this;
-
-        for (size_t i = 0; i < count; ++i)
-        {
-            if (!cur.is_readable(sizeof(void*)))
-                return address{};
-
-            value_type next{};
-            if constexpr (MEMLIB_IS_64)
-            {
-                uint64_t v{};
-                if (!cur.read(v))
-                    return address{};
-
-                next = static_cast<value_type>(v);
-            }
-            else
-            {
-                uint32_t v{};
-                if (!cur.read(v))
-                    return address{};
-
-                next = static_cast<value_type>(v);
-            }
-
-            cur = address(next);
-            if (!cur)
-                return address{};
-        }
-
-        return cur;
-    }
-
-
-
-    address address::follow(std::initializer_list<value_type> offsets) const noexcept
-    {
-        if (!m_value)
-            return {};
-
-        address cur = *this;
-
-        bool first = true;
-        for (auto off : offsets)
-        {
-            if (first)
-            {
-                cur = cur + off;
-                first = false;
-                continue;
-            }
-
-            cur = cur.dereference_pointer(1);
-            if (!cur)
-                return {};
-
-            cur = cur + off;
-        }
-
-        return cur;
-    }
-
-
-
-    address address::dereference_call() const noexcept
-    {
-        ZydisDecodedInstruction inst{};
-        ZydisDecodedOperand ops[ZYDIS_MAX_OPERAND_COUNT]{};
-        if (!zydis_decode(ptr(), inst, ops))
-            return {};
-
-        if (inst.mnemonic != ZYDIS_MNEMONIC_CALL)
-            return {};
-
-        for (uint8_t i = 0; i < inst.operand_count_visible; ++i)
-        {
-            const auto& op = ops[i];
-            if (op.type == ZYDIS_OPERAND_TYPE_IMMEDIATE && op.imm.is_relative)
-            {
-                const int64_t disp = op.imm.value.s;
-                return resolve_relative(disp, inst.length);
-            }
-        }
-
-        return {};
-    }
-
-
-
-    address address::dereference_branch() const noexcept
-    {
-        ZydisDecodedInstruction inst{};
-        ZydisDecodedOperand ops[ZYDIS_MAX_OPERAND_COUNT]{};
-        if (!zydis_decode(ptr(), inst, ops))
-            return {};
-
-        const bool is_jmp = (inst.mnemonic == ZYDIS_MNEMONIC_JMP);
-
-        const bool is_jcc =
-            (inst.mnemonic >= ZYDIS_MNEMONIC_JB    && inst.mnemonic <= ZYDIS_MNEMONIC_JZ) ||
-             inst.mnemonic == ZYDIS_MNEMONIC_JECXZ || inst.mnemonic == ZYDIS_MNEMONIC_JRCXZ;
-
-        if (!is_jmp && !is_jcc)
-            return {};
-
-        for (uint8_t i = 0; i < inst.operand_count_visible; ++i)
-        {
-            const auto& op = ops[i];
-            if (op.type == ZYDIS_OPERAND_TYPE_IMMEDIATE && op.imm.is_relative)
-            {
-                const int64_t disp = op.imm.value.s;
-                return resolve_relative(disp, inst.length);
-            }
-        }
-
-        return {};
-    }
-
-
-
-#if MEMLIB_IS_64
-    address address::resolve_rip_relative() const noexcept
-    {
-        ZydisDecodedInstruction inst{};
-        ZydisDecodedOperand ops[ZYDIS_MAX_OPERAND_COUNT_VISIBLE]{};
-        if (!zydis_decode(ptr(), inst, ops))
-            return {};
-
-        // Look for memory operand with base = RIP
-        for (uint8_t i = 0; i < inst.operand_count_visible; ++i)
-        {
-            const auto& op = ops[i];
-            if (op.type != ZYDIS_OPERAND_TYPE_MEMORY)
-                continue;
-
-            if (op.mem.base != ZYDIS_REGISTER_RIP)
-                continue;
-
-            // Effective address: next_ip + disp
-            const int64_t    disp    = op.mem.disp.value;
-            const value_type next_ip = m_value + inst.length;
-
-            return address(static_cast<value_type>(next_ip + disp));
-        }
-
-        return {};
-    }
-#endif
-
-#pragma endregion
-
 #pragma region scanner
 
     bool parse_combo_pattern(const char* combo, scan_pattern& out) noexcept
@@ -883,83 +560,7 @@ namespace memlib
         return (len != 0);
     }
 
-
-
-    scanner::scanner(const char* modulename)
-    {
-#if MEMLIB_IS_WINDOWS
-        m_module = ::GetModuleHandleA(modulename); // modulename==nullptr => current module
-        if (!m_module)
-        {
-            const char* label = modulename ? modulename : "<current module>";
-            MEMLIB_ERROR("Could not find module handle of {}", label);
-            return;
-        }
-
-        const auto* nt = nt_headers_from_module(m_module);
-        if (!nt)
-        {
-            m_module = nullptr;
-            MEMLIB_ERROR("Invalid PE headers (DOS/NT signature check failed).");
-            return;
-        }
-
-        const uintptr_t module_base = reinterpret_cast<uintptr_t>(m_module);
-        const uintptr_t image_size = nt->OptionalHeader.SizeOfImage;
-
-        auto* section     = IMAGE_FIRST_SECTION(nt);
-        const WORD nsects = nt->FileHeader.NumberOfSections;
-
-        size_t sections_found = 0;
-        for (WORD i = 0; i < nsects; ++i, ++section)
-        {
-            uintptr_t va   = section->VirtualAddress;
-            size_t    vlen = static_cast<size_t>(std::max(section->Misc.VirtualSize, section->SizeOfRawData));
-
-            if (va >= image_size)
-                continue;
-
-            char name[IMAGE_SIZEOF_SHORT_NAME + 1]{};
-            std::memcpy(name, section->Name, 8);
-
-            const uint8_t id = section_id_from_name(section->Name);
-            if (id == 0xFF)
-                continue;
-
-            prot pr = prot::none;
-            if (section->Characteristics & IMAGE_SCN_MEM_READ)    pr = pr | prot::r;
-            if (section->Characteristics & IMAGE_SCN_MEM_WRITE)   pr = pr | prot::w;
-            if (section->Characteristics & IMAGE_SCN_MEM_EXECUTE) pr = pr | prot::x;
-
-            void* start = reinterpret_cast<void*>(module_base + va);
-            size_t size = std::min<size_t>(vlen, image_size - va);
-
-            m_sections[id] = { name, start, size, pr };
-            MEMLIB_DEBUG(
-                "[Scanner] Found section \"{}\" at {} and size 0x{:X} ({}{}{}).",
-                name,
-                start,
-                size,
-                has(pr, prot::r) ? "r" : "",
-                has(pr, prot::w) ? "w" : "",
-                has(pr, prot::x) ? "x" : ""
-            );
-
-            ++sections_found;
-        }
-
-        if (!sections_found)
-        {
-            m_module = nullptr;
-            MEMLIB_ERROR("Target module has no sections. (bug?)");
-        }
-#elif MEMLIB_IS_LINUX
-#endif
-    }
-
-
-
-    address scanner::find(const scan_pattern& pattern, void* start, size_t length, int32_t offset) const noexcept
+    address find(const scan_pattern& pattern, void* start, size_t length, int32_t offset) noexcept
     {
         if (!start || length == 0 || pattern.length == 0)
             return {};
@@ -1060,31 +661,13 @@ namespace memlib
 #endif
     }
 
-    address scanner::find(const char* combo, void* start, size_t length, int32_t offset) const noexcept
+    address find(const char* combo, void* start, size_t length, int32_t offset) noexcept
     {
         scan_pattern pattern{};
         if (!parse_combo_pattern(combo, pattern))
             return {};
 
         return find(pattern, start, length, offset);
-    }
-
-    address scanner::find(const scan_pattern& pattern, section sec, int32_t offset) const noexcept
-    {
-        auto s = m_sections[uint8_t(sec)];
-        if (!s.start || !s.size)
-            return {};
-
-        return find(pattern, s.start, s.size, offset);
-    }
-
-    address scanner::find(const char* combo, section sec, int32_t offset) const noexcept
-    {
-        scan_pattern pattern{};
-        if (!parse_combo_pattern(combo, pattern))
-            return {};
-
-        return find(pattern, sec, offset);
     }
 
 #pragma endregion
