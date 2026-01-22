@@ -20,13 +20,13 @@ target_include_directories(MemLib
 
 set(MEMLIB_PUBLIC_HEADERS
     code/public/memlib.hpp
-    code/public/memlib/address.hpp
-    code/public/memlib/hook.hpp
     code/public/memlib/macros.hpp
-    code/public/memlib/memory.hpp
-    code/public/memlib/module.hpp
     code/public/memlib/os.hpp
-    code/public/memlib/re_helper_macros.hpp
+    code/public/memlib/types.hpp
+    code/public/memlib/address.hpp
+    code/public/memlib/module.hpp
+    code/public/memlib/memory.hpp
+    code/public/memlib/hook.hpp
     code/public/memlib/thread.hpp
 )
 

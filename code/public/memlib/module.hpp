@@ -28,10 +28,10 @@ namespace memlib
 		[[nodiscard]] address find(const char* combo, section sec, int32_t offset) noexcept;
 
 	protected:
-		void*       base = nullptr;
-		size_t      size = 0;
-		std::string path{};
-		std::string name{};
+		void*         m_base = nullptr;
+		size_t        m_size = 0;
+		std::string   m_path{};
+		std::string   m_name{};
 
 		section_info  m_sections[uint8_t(section::max)] = {};
 		module_handle m_handle                          = nullptr;
