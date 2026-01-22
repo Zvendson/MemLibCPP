@@ -73,7 +73,7 @@ namespace memlib
 
     IMAGE_NT_HEADERS* get_nt_headers_from_module(HMODULE mod) noexcept;
 
-    inline bool is_readable_protect_win(DWORD protect) noexcept;
+    bool is_readable_protect_win(DWORD protect) noexcept;
 #elif MEMLIB_IS_LINUX
     using module_handle = void*;
 #endif
