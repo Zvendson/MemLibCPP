@@ -23,6 +23,14 @@
     #error "MEMLIB: unsupported pointer size"
 #endif
 
+#if defined(NDEBUG)
+    #define MEMLIB_IS_DEBUG   0
+    #define MEMLIB_IS_RELEASE 1
+#else
+    #define MEMLIB_IS_DEBUG   1
+    #define MEMLIB_IS_RELEASE 0
+#endif
+
 
 /*
 Helper macros for your reversed structs or w/e.

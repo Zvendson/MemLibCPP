@@ -24,8 +24,16 @@ namespace memlib
 		}
 
 	public:
+		inline void* get_base() const noexcept { return m_base; }
+		inline size_t get_size() const noexcept { return m_size; }
+		inline void* get_end() const noexcept { return reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(m_base) + m_size); }
+		inline std::string_view get_name() const noexcept { return std::string_view(m_name); }
+		inline std::string_view get_path() const noexcept { return std::string_view(m_path); }
+		section_info get_section(section sec) const noexcept;
+
+	public:
 		[[nodiscard]] address find(const scan_pattern& pattern, section sec, int32_t offset = 0x0000) noexcept;
-		[[nodiscard]] address find(const char* combo, section sec, int32_t offset) noexcept;
+		[[nodiscard]] address find(const char* combo, section sec, int32_t offset = 0x0000) noexcept;
 
 	protected:
 		void*         m_base = nullptr;

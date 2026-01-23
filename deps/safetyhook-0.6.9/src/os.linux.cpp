@@ -113,7 +113,7 @@ std::expected<VmBasicInfo, OsError> vm_query(uint8_t* address) {
     while (fgets(line, sizeof(line), maps) != nullptr) {
         path[0] = '\0';
 
-        sscanf(line, "%lx-%lx %4s %lx %x:%x %lu %255[^\n]", &start, &end, perms, &offset, &dev_major, &dev_minor,
+        sscanf(line, "%lx-%lx %4s %lx %x:%x %lu %255[^\n]", &start, &end, perms, &offset, (uint32_t*)&dev_major, (uint32_t*)&dev_minor,
             &inode, path);
 
         if (last_end < start && addr >= last_end && addr < start) {

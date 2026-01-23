@@ -16,6 +16,7 @@
     #include <windows.h>
     #include <psapi.h>
 #elif MEMLIB_IS_LINUX
+    #include <dlfcn.h>
 #endif
 
 namespace memlib
@@ -76,6 +77,8 @@ namespace memlib
     bool is_readable_protect_win(DWORD protect) noexcept;
 #elif MEMLIB_IS_LINUX
     using module_handle = void*;
+
+    module_handle get_module_handle(const char* name);
 #endif
 
 
@@ -148,8 +151,8 @@ namespace memlib
 
     struct span_pattern
     {
-        const char* combo   = nullptr; // e.g. "E8 ?? ?? ?? ?? 86"
-        section     section = section::code;
+        const char* combo = nullptr; // e.g. "E8 ?? ?? ?? ?? 86"
+        section     sec   = section::code;
     };
 
 }

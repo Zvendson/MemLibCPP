@@ -255,15 +255,6 @@ namespace memlib
     bool is_writable(void* p, size_t bytes)   noexcept { return region_has(p, bytes, prot::w); }
     bool is_executable(void* p, size_t bytes) noexcept { return region_has(p, bytes, prot::x); }
 
-    bool is_readable_protect(DWORD protect) noexcept
-    {
-        if (protect & PAGE_GUARD)    return false;
-        if (protect & PAGE_NOACCESS) return false;
-
-        const prot p = win_to_prot(protect);
-        return prot_has(p, prot::r);
-    }
-
     bool parse_combo_pattern(const char* combo, scan_pattern& out) noexcept
     {
         out = {};
@@ -322,6 +313,7 @@ namespace memlib
 
     address find(const scan_pattern& pattern, void* start, size_t length, int32_t offset) noexcept
     {
+        MEMLIB_DEBUG("Scanning {} to {}.", start, (void*)(((uintptr_t)start) + length));
         if (!start || length == 0 || pattern.length == 0)
             return {};
 
@@ -401,7 +393,7 @@ namespace memlib
             if (seg_end - seg_start < uintptr_t(pat_len))
                 continue;
 
-            const uintptr_t found = scan_range_bmh(seg_start, seg_end, pat);
+            const uintptr_t found = scan_range_bmh(seg_start, seg_end, pattern);
             if (found != invalid_addr)
             {
                 uintptr_t out = 0;

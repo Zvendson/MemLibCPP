@@ -64,15 +64,22 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 if (WIN32)
   target_compile_definitions(MemLib PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
-endif()
 
-target_link_libraries(MemLib
-  PRIVATE
-    Dbghelp
-    Zycore
-    Zydis
-    safetyhook::safetyhook
-)
+  target_link_libraries(MemLib
+    PRIVATE
+      Dbghelp
+      Zycore
+      Zydis
+      safetyhook::safetyhook
+  )
+else()
+  target_link_libraries(MemLib
+    PRIVATE
+      Zycore
+      Zydis
+      safetyhook::safetyhook
+  )
+endif()
 
 if (MSVC)
   target_compile_options(MemLib PRIVATE /W4 /permissive-)

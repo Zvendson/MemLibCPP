@@ -29,7 +29,7 @@ namespace memlib
 	}
 }
 
-#ifdef _DEBUG
+#if MEMLIB_IS_DEBUG
 	#define MEMLIB_TRACE(...) ::memlib::log(::memlib::log_level::trace, __VA_ARGS__)
 	#define MEMLIB_DEBUG(...) ::memlib::log(::memlib::log_level::debug, __VA_ARGS__)
 #else
