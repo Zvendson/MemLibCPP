@@ -63,7 +63,7 @@ Helper macros for your reversed structs or w/e.
 
 
 #ifndef MEMLIB_MAX_PATH
-    #define MEMLIB_MAX_PATH 8192
+    #define MEMLIB_MAX_PATH 4096
 #endif
 
 

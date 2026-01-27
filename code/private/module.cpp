@@ -3,17 +3,15 @@
 #include "internal.hpp"
 
 #if MEMLIB_IS_LINUX
-    #include <link.h>
-    #include <elf.h>
-    #include <unistd.h>
-    #include <algorithm>
-    #include <string_view>
-    #include <cstring>
-    #include <limits.h>
-    #include <limits>
-#endif
+#include <link.h>
+#include <elf.h>
+#include <unistd.h>
+#include <algorithm>
+#include <string_view>
+#include <cstring>
+#include <limits.h>
+#include <limits>
 
-#if MEMLIB_IS_LINUX
 namespace
 {
     inline bool match_name(std::string_view candidate_path, const char* requested)
@@ -94,6 +92,10 @@ namespace memlib
 
         auto*      sec    = IMAGE_FIRST_SECTION(nt);
         const WORD nsects = nt->FileHeader.NumberOfSections;
+
+        m_base = reinterpret_cast<void*>(module_base);
+        m_size = static_cast<size_t>(image_size);
+        m_path = get_module_path(m_handle);
 
         size_t sections_found = 0;
 
@@ -291,9 +293,32 @@ namespace memlib
     section_info module::get_section(section sec) const noexcept
     {
         size_t secid = size_t(sec);
-        if (secid > size_t(section::max))
+        if (secid >= size_t(section::max))
             return {};
 
         return m_sections[secid];
+    }
+
+
+
+    std::vector<section_info> module::get_sections() const noexcept
+    {
+        std::vector<section_info> out;
+        if (!m_handle)
+            return out;
+
+        constexpr size_t size = size_t(section::max);
+        out.reserve(size);
+
+        for (size_t i = 0 ; i < size; ++i)
+        {
+            auto& section = m_sections[i];
+            if (section.module == nullptr)
+                continue;
+
+            out.push_back(section);
+        }
+
+        return out;
     }
 }

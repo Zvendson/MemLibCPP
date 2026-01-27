@@ -23,7 +23,7 @@ namespace memlib
 
     bool  protect(void* p, size_t size, prot new_prot, prot* old_prot_out = nullptr) noexcept;
     void* alloc(size_t size, prot p = prot::r | prot::w) noexcept;
-    bool  free(void* p, size_t size = 0) noexcept;
+    bool  free(void* p) noexcept;
     void  flush_icache(void* p, size_t size) noexcept;
 
     std::optional<module_info>  module_from_address(void* p) noexcept;

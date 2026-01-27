@@ -156,6 +156,8 @@ namespace memlib
         return nt;
     }
 
+
+
     bool is_readable_protect_win(DWORD protect) noexcept
     {
         if (protect & PAGE_GUARD)
@@ -177,6 +179,69 @@ namespace memlib
             default:
                 return false;
         }
+    }
+
+
+
+    std::filesystem::path get_module_path(module_handle mod)
+    {
+        if (!mod)
+            return {};
+
+        std::wstring buf;
+        buf.resize(260);
+
+        for (;;)
+        {
+            DWORD n = ::GetModuleFileNameW(mod, buf.data(), static_cast<DWORD>(buf.size()));
+
+            if (n == 0)
+                return {};
+
+            // If truncated, grow and retry
+            if (n < buf.size() - 1)
+            {
+                buf.resize(n);
+                break;
+            }
+
+            if (buf.size() > 1u << 15)
+                return {};
+
+            buf.resize(buf.size() * 2);
+        }
+
+        return std::filesystem::path(buf);
+    }
+
+
+
+    std::wstring get_module_name_w(std::filesystem::path path)
+    {
+        return path.empty() ? L"" : path.filename().wstring();
+    }
+
+
+
+    std::string get_module_name(std::filesystem::path path)
+    {
+        return path.empty() ? "" : path.filename().string();
+    }
+
+
+
+    std::wstring get_module_name_w(module_handle mod)
+    {
+        auto p = get_module_path(mod);
+        return p.empty() ? L"" : p.filename().wstring();
+    }
+
+
+
+    std::string get_module_name(module_handle mod)
+    {
+        auto p = get_module_path(mod);
+        return p.empty() ? "" : p.filename().string();
     }
 
 
@@ -225,9 +290,9 @@ namespace memlib
 
 
 
-    bool free(void* p, size_t size) noexcept
+    bool free(void* p) noexcept
     {
-        return ::VirtualFree(p, size, MEM_RELEASE) != 0;
+        return ::VirtualFree(p, 0, MEM_RELEASE) != 0;
     }
 
 
@@ -304,17 +369,13 @@ namespace memlib
         if (!::GetModuleInformation(::GetCurrentProcess(), hmod, &mi, sizeof(mi)))
             return std::nullopt;
 
-        wchar_t path[MEMLIB_MAX_PATH]{};
-        ::GetModuleFileNameW(hmod, path, MEMLIB_MAX_PATH);
+        auto path = get_module_path(hmod);
 
         module_info out{};
         out.base = mi.lpBaseOfDll;
         out.size = static_cast<size_t>(mi.SizeOfImage);
-        out.path = to_string(path);
-
-        const std::string s = out.path;
-        const auto pos = s.find_last_of("\\/");
-        out.name = (pos == std::string::npos) ? s : s.substr(pos + 1);
+        out.path = path;
+        out.name = path.empty() ? "" : path.filename().string();
 
         return out;
     }

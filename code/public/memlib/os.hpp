@@ -18,6 +18,7 @@
 #elif MEMLIB_IS_LINUX
     #include <dlfcn.h>
 #endif
+#include <filesystem>
 
 namespace memlib
 {
@@ -57,29 +58,33 @@ namespace memlib
     };
 
 
-
 #if MEMLIB_IS_WINDOWS
     using module_handle = HMODULE;
 
     prot  win_to_prot(DWORD protect) noexcept;
     DWORD prot_to_win(prot  protect) noexcept;
+    bool is_readable_protect_win(DWORD protect) noexcept;
+
+    IMAGE_NT_HEADERS* get_nt_headers_from_module(HMODULE mod) noexcept;
 
     section get_section_from_name(const uint8_t name8[8]) noexcept;
+#elif MEMLIB_IS_LINUX
+    using module_handle = void*;
+#endif
+
+    module_handle get_module_handle(const char* name);
 
     std::string to_string(const wchar_t* str);
 
     uint32_t get_pid();
 
-    module_handle get_module_handle(const char* name);
+    std::filesystem::path get_module_path(module_handle mod);
 
-    IMAGE_NT_HEADERS* get_nt_headers_from_module(HMODULE mod) noexcept;
+    std::wstring get_module_name_w(std::filesystem::path path);
+    std::wstring get_module_name_w(module_handle mod);
 
-    bool is_readable_protect_win(DWORD protect) noexcept;
-#elif MEMLIB_IS_LINUX
-    using module_handle = void*;
-
-    module_handle get_module_handle(const char* name);
-#endif
+    std::string  get_module_name(std::filesystem::path path);
+    std::string  get_module_name(module_handle mod);
 
 
 
@@ -118,10 +123,10 @@ namespace memlib
 
     struct region_info
     {
-        void*       start      = nullptr;
-        void*       end        = nullptr;
-        prot        protection = prot::none;
-        std::string mapped_path{};
+        void*                 start      = nullptr;
+        void*                 end        = nullptr;
+        prot                  protection = prot::none;
+        std::filesystem::path mapped_path{};
 
         explicit operator bool() const noexcept { return start != nullptr && end != nullptr && start < end; }
     };
@@ -130,10 +135,10 @@ namespace memlib
 
     struct module_info
     {
-        void*       base = nullptr;
-        size_t      size = 0;
-        std::string path{};
-        std::string name{};
+        void*                 base = nullptr;
+        size_t                size = 0;
+        std::filesystem::path path{};
+        std::string           name{};
 
         explicit operator bool() const noexcept { return base != nullptr; }
     };
