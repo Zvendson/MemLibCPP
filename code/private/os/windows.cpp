@@ -1,6 +1,8 @@
 #include "memlib/os.hpp"
 #include "memlib/memory.hpp"
 
+#if MEMLIB_IS_WINDOWS
+
 #include <array>
 
 namespace memlib
@@ -380,3 +382,4 @@ namespace memlib
         return out;
     }
 }
+#endif

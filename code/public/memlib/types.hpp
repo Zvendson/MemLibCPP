@@ -2,6 +2,7 @@
 
 #include "macros.hpp"
 
+#include <cstdint>
 #include <type_traits>
 #include <string>
 

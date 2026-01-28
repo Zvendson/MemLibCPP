@@ -1,6 +1,7 @@
 
 #include "memlib/os.hpp"
 #include "memlib/memory.hpp"
+#include "../internal.hpp"
 
 #if MEMLIB_IS_LINUX
 
@@ -29,11 +30,18 @@ namespace
         return p;
     }
 
-    inline std::string basename_of(std::string_view path)
+
+
+    inline prot perms_to_prot(const char perm[5]) noexcept
     {
-        const auto pos = path.find_last_of('/');
-        return (pos == std::string_view::npos) ? std::string(path) : std::string(path.substr(pos + 1));
+        prot p = prot::none;
+        if (perm[0] == 'r') p = p | prot::r;
+        if (perm[1] == 'w') p = p | prot::w;
+        if (perm[2] == 'x') p = p | prot::x;
+        return p;
     }
+
+
 
     inline bool parse_maps_line(const char* line, uintptr_t& start, uintptr_t& end, char perm[5], std::string& path_out)
     {
@@ -67,64 +75,67 @@ namespace
         return true;
     }
 
-    inline prot perms_to_prot(const char perm[5]) noexcept
-    {
-        prot p = prot::none;
-        if (perm[0] == 'r') p = p | prot::r;
-        if (perm[1] == 'w') p = p | prot::w;
-        if (perm[2] == 'x') p = p | prot::x;
-        return p;
-    }
 
-    inline std::string self_exe_path()
+
+    inline std::filesystem::path self_exe_path()
     {
         char buf[4096]{};
+
         const ssize_t n = ::readlink("/proc/self/exe", buf, sizeof(buf) - 1);
         if (n <= 0)
             return {};
+
         buf[n] = '\0';
-        return std::string(buf);
+        return std::filesystem::path(buf);
     }
 
-    inline std::optional<std::pair<uintptr_t, uintptr_t>> module_range_from_maps(std::string_view path, uintptr_t base_hint = 0)
+    inline std::optional<std::pair<uintptr_t, uintptr_t>> module_range_from_maps(const std::filesystem::path& target_path, uintptr_t base_hint = 0)
     {
+        if (target_path.empty())
+            return std::nullopt;
+
         FILE* f = std::fopen("/proc/self/maps", "r");
         if (!f)
             return std::nullopt;
 
-        uintptr_t min_s = 0, max_e = 0;
-        bool any = false;
+        uintptr_t min_s = 0;
+        uintptr_t max_e = 0;
+        bool      any   = false;
+
+        const std::filesystem::path target_norm = target_path.lexically_normal();
 
         char line[4096]{};
         while (std::fgets(line, sizeof(line), f))
         {
-            uintptr_t s = 0, e = 0;
-            char perm[5]{};
+            uintptr_t   start = 0;
+            uintptr_t   end   = 0;
+            char        perm[5]{};
             std::string mapped{};
-            if (!parse_maps_line(line, s, e, perm, mapped))
+
+            if (!parse_maps_line(line, start, end, perm, mapped))
                 continue;
 
             if (mapped.empty())
                 continue;
 
-            // For the main executable, maps path is the full path to /proc/self/exe target.
-            if (mapped != path)
+            const std::filesystem::path mapped_path = std::filesystem::path(mapped).lexically_normal();
+
+            if (mapped_path != target_norm)
                 continue;
 
-            // If we have a base hint, ignore stray mappings below it.
-            if (base_hint && s < base_hint)
+            if (base_hint && start < base_hint)
                 continue;
 
             if (!any)
             {
-                min_s = s;
-                max_e = e;
+                min_s = start;
+                max_e = end;
                 any = true;
             }
             else
             {
-                min_s = std::min(min_s, s);
-                max_e = std::max(max_e, e);
+                min_s = std::min(min_s, start);
+                max_e = std::max(max_e, end);
             }
         }
 
@@ -133,6 +144,16 @@ namespace
             return std::nullopt;
 
         return std::make_pair(min_s, max_e);
+    }
+
+    // Utility used inside dl_iterate_phdr callbacks.
+    inline std::filesystem::path info_path(const dl_phdr_info* info)
+    {
+        std::string_view name = (info->dlpi_name && *info->dlpi_name) ? info->dlpi_name : "";
+        if (name.empty())
+            return self_exe_path();
+
+        return std::filesystem::path(std::string(name));
     }
 }
 
@@ -158,6 +179,87 @@ namespace memlib
             alt += ".so";
 
         return ::dlopen(alt.c_str(), RTLD_NOLOAD | RTLD_NOW);
+    }
+
+
+
+    std::string to_string(const wchar_t* str)
+    {
+        if (!str || !*str)
+            return {};
+
+        std::mbstate_t state{};
+        const wchar_t* src = str;
+
+        size_t len = std::wcsrtombs(nullptr, &src, 0, &state);
+        if (len == static_cast<size_t>(-1))
+            return {};
+
+        std::string out(len, '\0');
+        state = {};
+        src = str;
+
+        size_t written = std::wcsrtombs(out.data(), &src, len, &state);
+        if (written == static_cast<size_t>(-1))
+            return {};
+
+        return out;
+    }
+
+
+    std::filesystem::path get_module_path(module_handle mod)
+    {
+        if (!mod)
+            return {};
+
+        link_map* lm = nullptr;
+        if (::dlinfo(mod, RTLD_DI_LINKMAP, &lm) == 0 && lm)
+        {
+            if (lm->l_name && *lm->l_name)
+                return std::filesystem::path(lm->l_name);
+
+            // Main executable commonly has empty l_name.
+            return self_exe_path();
+        }
+
+        Dl_info di{};
+        if (::dladdr(reinterpret_cast<void*>(&get_module_path), &di) != 0)
+        {
+            if (di.dli_fname && *di.dli_fname)
+                return std::filesystem::path(di.dli_fname);
+        }
+        return self_exe_path();
+
+    }
+
+
+
+    std::wstring get_module_name_w(std::filesystem::path path)
+    {
+        return path.empty() ? L"" : path.filename().wstring();
+    }
+
+
+
+    std::string get_module_name(std::filesystem::path path)
+    {
+        return path.empty() ? "" : path.filename().string();
+    }
+
+
+
+    std::wstring get_module_name_w(module_handle mod)
+    {
+        auto p = get_module_path(mod);
+        return p.empty() ? L"" : p.filename().wstring();
+    }
+
+
+
+    std::string get_module_name(module_handle mod)
+    {
+        auto p = get_module_path(mod);
+        return p.empty() ? "" : p.filename().string();
     }
 
 
@@ -276,48 +378,66 @@ namespace memlib
 
         module_info out{};
         out.base = di.dli_fbase;
-        out.path = di.dli_fname ? std::string(di.dli_fname) : std::string{};
+
+        out.path = (di.dli_fname && *di.dli_fname)
+            ? std::filesystem::path(di.dli_fname)
+            : std::filesystem::path{};
+
         if (out.path.empty())
             out.path = self_exe_path();
 
-        out.name = basename_of(out.path);
+        // name is std::string in module_info (per your header)
+        out.name = out.path.filename().string();
 
         const uintptr_t base = reinterpret_cast<uintptr_t>(out.base);
 
         if (auto range = module_range_from_maps(out.path, base))
         {
-            out.base = reinterpret_cast<void*>(range->first); // more trustworthy than dladdr for main exe sometimes
+            out.base = reinterpret_cast<void*>(range->first); // maps is more trustworthy
             out.size = static_cast<size_t>(range->second - range->first);
         }
         else
         {
             // Fallback: compute size from program headers via dl_iterate_phdr
-            struct ctx { uintptr_t base; size_t size; std::string path; bool found; } c{base, 0, out.path, false};
+            struct ctx
+            {
+                uintptr_t base = 0;
+                size_t size = 0;
+                std::filesystem::path path{};
+                bool found = false;
+            } c{ base, 0, out.path, false };
 
             auto cb = [](dl_phdr_info* info, size_t, void* data) -> int
-            {
-                auto* c = static_cast<ctx*>(data);
-
-                std::string_view name = (info->dlpi_name && *info->dlpi_name) ? info->dlpi_name : "";
-                std::string path = name.empty() ? self_exe_path() : std::string(name);
-
-                if (path != c->path)
-                    return 0;
-
-                uintptr_t max_end = 0;
-                for (int i = 0; i < info->dlpi_phnum; ++i)
                 {
-                    const auto& ph = info->dlpi_phdr[i];
-                    if (ph.p_type != PT_LOAD)
-                        continue;
-                    const uintptr_t seg_end = info->dlpi_addr + ph.p_vaddr + ph.p_memsz;
-                    max_end = std::max(max_end, seg_end);
-                }
-                c->size = (max_end > info->dlpi_addr) ? static_cast<size_t>(max_end - info->dlpi_addr) : 0;
-                c->base = info->dlpi_addr;
-                c->found = true;
-                return 1;
-            };
+                    auto* c = static_cast<ctx*>(data);
+
+                    const std::filesystem::path path = info_path(info).lexically_normal();
+                    if (path != c->path.lexically_normal())
+                        return 0;
+
+                    uintptr_t max_end = 0;
+                    for (int i = 0; i < info->dlpi_phnum; ++i)
+                    {
+                        const auto& ph = info->dlpi_phdr[i];
+                        if (ph.p_type != PT_LOAD)
+                            continue;
+
+                        const uintptr_t seg_end =
+                            static_cast<uintptr_t>(info->dlpi_addr) +
+                            static_cast<uintptr_t>(ph.p_vaddr) +
+                            static_cast<uintptr_t>(ph.p_memsz);
+
+                        max_end = std::max(max_end, seg_end);
+                    }
+
+                    c->size = (max_end > static_cast<uintptr_t>(info->dlpi_addr))
+                        ? static_cast<size_t>(max_end - static_cast<uintptr_t>(info->dlpi_addr))
+                        : 0;
+
+                    c->base = static_cast<uintptr_t>(info->dlpi_addr);
+                    c->found = true;
+                    return 1;
+                };
 
             ::dl_iterate_phdr(cb, &c);
 
@@ -337,79 +457,83 @@ namespace memlib
             return std::nullopt;
 
         const uintptr_t addr = reinterpret_cast<uintptr_t>(p);
-        const uintptr_t base = reinterpret_cast<uintptr_t>(mod->base);
 
-        // Find the PT_LOAD segment that contains this address.
         struct ctx
         {
-            uintptr_t base = 0;
             uintptr_t addr = 0;
-            std::string path{};
+            std::filesystem::path path{};
             section_info out{};
             bool found = false;
         } c;
 
-        c.base = base;
         c.addr = addr;
         c.path = mod->path;
 
         auto cb = [](dl_phdr_info* info, size_t, void* data) -> int
-        {
-            auto* c = static_cast<ctx*>(data);
-
-            std::string_view name = (info->dlpi_name && *info->dlpi_name) ? info->dlpi_name : "";
-            std::string path = name.empty() ? self_exe_path() : std::string(name);
-
-            if (path != c->path)
-                return 0;
-
-            for (int i = 0; i < info->dlpi_phnum; ++i)
             {
-                const auto& ph = info->dlpi_phdr[i];
-                if (ph.p_type != PT_LOAD)
-                    continue;
+                auto* c = static_cast<ctx*>(data);
 
-                const uintptr_t seg_start = info->dlpi_addr + ph.p_vaddr;
-                const uintptr_t seg_end   = seg_start + ph.p_memsz;
+                const std::filesystem::path path = info_path(info).lexically_normal();
+                if (path != c->path.lexically_normal())
+                    return 0;
 
-                if (c->addr < seg_start || c->addr >= seg_end)
-                    continue;
-
-                const prot pr = phdr_flags_to_prot(ph.p_flags);
-
-                section type = section::unknown;
-                std::string sname;
-
-                if (prot_has(pr, prot::x))
+                for (int i = 0; i < info->dlpi_phnum; ++i)
                 {
-                    type = section::code;
-                    sname = ".text";
+                    const auto& ph = info->dlpi_phdr[i];
+                    if (ph.p_type != PT_LOAD)
+                        continue;
+
+                    const uintptr_t seg_start =
+                        static_cast<uintptr_t>(info->dlpi_addr) +
+                        static_cast<uintptr_t>(ph.p_vaddr);
+
+                    const uintptr_t seg_end =
+                        seg_start + static_cast<uintptr_t>(ph.p_memsz);
+
+                    if (c->addr < seg_start || c->addr >= seg_end)
+                        continue;
+
+                    const prot pr = phdr_flags_to_prot(ph.p_flags);
+
+                    section type = section::unknown;
+                    std::string sname;
+
+                    if (prot_has(pr, prot::x))
+                    {
+                        type = section::code;
+                        sname = ".text";
+                    }
+                    else if (prot_has(pr, prot::w))
+                    {
+                        type = section::rw_data;
+                        sname = ".data";
+                    }
+                    else
+                    {
+                        type = section::ro_data;
+                        sname = ".rodata";
+                    }
+
+                    // module handle for reference
+                    const std::string path_str = path.string();
+                    module_handle mh = get_module_handle(path_str.c_str());
+
+                    c->out = {
+                        sname,
+                        type,
+                        reinterpret_cast<void*>(seg_start),
+                        static_cast<size_t>(seg_end - seg_start),
+                        static_cast<size_t>(seg_end - seg_start),
+                        pr,
+                        mh
+                    };
+
+                    c->found = true;
+                    return 1;
                 }
-                else if (prot_has(pr, prot::w))
-                {
-                    type = section::rw_data;
-                    sname = ".data";
-                }
-                else
-                {
-                    type = section::ro_data;
-                    sname = ".rodata";
-                }
 
-                // module handle for reference: NOLOAD only if already loaded
-                module_handle mh = get_module_handle(path.c_str());
-
-                c->out = { sname, type, reinterpret_cast<void*>(seg_start),
-                           static_cast<size_t>(seg_end - seg_start),
-                           static_cast<size_t>(seg_end - seg_start),
-                           pr, mh };
-
-                c->found = true;
-                return 1;
-            }
-
-            return 0;
-        };
+                return 0;
+            };
 
         ::dl_iterate_phdr(cb, &c);
 

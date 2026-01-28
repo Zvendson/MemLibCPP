@@ -17,6 +17,7 @@
     #include <psapi.h>
 #elif MEMLIB_IS_LINUX
     #include <dlfcn.h>
+    #include <unistd.h>
 #endif
 #include <filesystem>
 
@@ -68,15 +69,17 @@ namespace memlib
     IMAGE_NT_HEADERS* get_nt_headers_from_module(HMODULE mod) noexcept;
 
     section get_section_from_name(const uint8_t name8[8]) noexcept;
+
+    uint32_t get_pid();
 #elif MEMLIB_IS_LINUX
     using module_handle = void*;
+
+    inline uint32_t get_pid() { return static_cast<uint32_t>(::getpid()); }
 #endif
 
     module_handle get_module_handle(const char* name);
 
-    std::string to_string(const wchar_t* str);
-
-    uint32_t get_pid();
+    std::string to_string(const wchar_t* str);   
 
     std::filesystem::path get_module_path(module_handle mod);
 

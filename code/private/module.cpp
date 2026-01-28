@@ -182,7 +182,6 @@ namespace memlib
 
             // Path/name
             c->path = path.empty() ? self_exe_path() : std::string(path);
-            MEMLIB_DEBUG("Path: {}", c->path);
             const auto pos = c->path.find_last_of('/');
             c->name = (pos == std::string::npos) ? c->path : c->path.substr(pos + 1);
 
@@ -262,10 +261,23 @@ namespace memlib
         m_base = c.base;
         m_size = c.size;
         m_path = c.path;
-        m_name = c.name;
 
         for (uint8_t i = 0; i < uint8_t(section::max); ++i)
+        {
+            if (c.sections[i].module == nullptr)
+                continue;
+
+            MEMLIB_DEBUG(
+                "[Scanner] Found section \"{}\" at {} and size 0x{:X} ({}{}{}).",
+                c.sections[i].name,
+                c.sections[i].start,
+                c.sections[i].size_padded,
+                prot_has(c.sections[i].protection, prot::r) ? "r" : "",
+                prot_has(c.sections[i].protection, prot::w) ? "w" : "",
+                prot_has(c.sections[i].protection, prot::x) ? "x" : ""
+            );
             m_sections[i] = c.sections[i];
+        }
 
         // Require at least a code section to scan.
         if (!m_sections[uint8_t(section::code)])
