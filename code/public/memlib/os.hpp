@@ -19,6 +19,18 @@
     #include <dlfcn.h>
     #include <unistd.h>
 #endif
+
+
+#if defined(_MSC_VER)
+    #define DEBUG_BREAK() __debugbreak()
+#elif defined(__GNUC__) || defined(__clang__)
+    #define DEBUG_BREAK() __builtin_trap()
+#else
+    #include <signal.h>
+    #define DEBUG_BREAK() raise(SIGTRAP)
+#endif
+
+
 #include <filesystem>
 
 namespace memlib
