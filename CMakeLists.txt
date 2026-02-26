@@ -70,6 +70,7 @@ if (WIN32)
       Dbghelp
       Zycore
       Zydis
+    PUBLIC
       safetyhook::safetyhook
   )
 else()
@@ -77,6 +78,7 @@ else()
     PRIVATE
       Zycore
       Zydis
+    PUBLIC
       safetyhook::safetyhook
   )
 endif()

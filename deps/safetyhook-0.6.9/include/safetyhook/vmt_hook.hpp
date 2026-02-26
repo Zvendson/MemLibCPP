@@ -17,7 +17,7 @@ import std.compat;
 
 namespace safetyhook {
 /// @brief A hook class that allows for hooking a single method in a VMT.
-class SAFETYHOOK_API VmHook final {
+class SAFETYHOOK_API VmHook {
 public:
     VmHook() = default;
     VmHook(const VmHook&) = delete;
@@ -92,7 +92,7 @@ private:
 };
 
 /// @brief A hook class that copies an entire VMT for a given object and replaces it.
-class SAFETYHOOK_API VmtHook final {
+class SAFETYHOOK_API VmtHook {
 public:
     /// @brief Error type for VmtHook.
     struct Error {

@@ -22,7 +22,7 @@ namespace safetyhook {
 using MidHookFn = void (*)(Context& ctx);
 
 /// @brief A mid function hook.
-class SAFETYHOOK_API MidHook final {
+class SAFETYHOOK_API MidHook {
 public:
     /// @brief Error type for MidHook.
     struct Error {
