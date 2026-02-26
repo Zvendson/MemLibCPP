@@ -10,6 +10,8 @@
 
 namespace memlib
 {
+	using scan_callback = memlib::address(*)(memlib::address addr);
+
 	class module
 	{
 	public:
@@ -36,6 +38,15 @@ namespace memlib
 	public:
 		[[nodiscard]] address find(const scan_pattern& pattern, section sec, int32_t offset = 0x0000) noexcept;
 		[[nodiscard]] address find(const char* combo, section sec, int32_t offset = 0x0000) noexcept;
+
+		[[nodiscard]] address find(const scan_pattern& pattern, section sec, scan_callback cb) noexcept;
+		[[nodiscard]] address find(const char* combo, section sec, scan_callback cb) noexcept;
+
+		template<class T>
+		[[nodiscard]] T find(const scan_pattern& pattern, section sec, int32_t offset = 0x0000) noexcept { return find(pattern, sec, offset).as<T>(); }
+
+		template<class T>
+		[[nodiscard]] T find(const char* combo, section sec, int32_t offset = 0x0000) noexcept { return find(combo, sec, offset).as<T>(); }
 
 	protected:
 		void*                 m_base = nullptr;

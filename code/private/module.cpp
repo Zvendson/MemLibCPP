@@ -333,4 +333,24 @@ namespace memlib
 
         return out;
     }
+
+
+
+    address module::find(const scan_pattern& pattern, section sec, scan_callback cb) noexcept
+    {
+        const auto section = m_sections[uint8_t(sec)];
+        auto addr = memlib::find(pattern, section.start, section.size);
+        
+        return cb ? cb(addr) : addr;
+    }
+
+
+
+    address module::find(const char* combo, section sec, scan_callback cb) noexcept
+    {
+        const auto section = m_sections[uint8_t(sec)];
+        auto addr = memlib::find(combo, section.start, section.size);
+
+        return cb ? cb(addr) : addr;
+    }
 }
