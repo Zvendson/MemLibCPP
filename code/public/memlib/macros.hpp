@@ -60,6 +60,10 @@ Helper macros for your reversed structs or w/e.
         )
 #endif
 
+#ifndef MEMLIB_ASSERT
+    #define MEMLIB_ASSERT(expression, message) assert(expression && message)
+#endif
+
 
 
 #ifndef MEMLIB_MAX_PATH
