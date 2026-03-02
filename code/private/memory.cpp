@@ -7,9 +7,16 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <cstddef>
+#include <cinttypes>
 
 #if MEMLIB_IS_WINDOWS
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
 #elif MEMLIB_IS_LINUX
+#include <cstdio>
 #endif
 
 #include "internal.hpp"
@@ -74,179 +81,71 @@ namespace
 
 
 
-    static inline size_t build_runs(const scan_pattern& pat, run out[MEMLIB_MAX_PATTERN_LEN]) noexcept
+    static inline bool pattern_matches_at(const scan_pattern& pat, uintptr_t addr) noexcept
     {
-        size_t count = 0;
-        size_t i = 0;
-
-        while (i < pat.length)
-        {
-            while (i < pat.length && pat.mask[i] != 'x')
-                ++i;
-
-            if (i >= pat.length)
-                break;
-
-            const size_t start = i;
-            while (i < pat.length && pat.mask[i] == 'x')
-                ++i;
-
-            const size_t len = i - start;
-            out[count].off = static_cast<uint16_t>(start);
-            out[count].len = static_cast<uint16_t>(len);
-            ++count;
-        }
-
-        return count;
-    }
-
-
-
-    static inline bool runs_equal(const uint8_t* mem, const scan_pattern& pat, const run* runs, size_t run_count) noexcept
-    {
-        for (size_t i = 0; i < run_count; ++i)
-        {
-            const size_t off = runs[i].off;
-            const size_t len = runs[i].len;
-            if (std::memcmp(mem + off, pat.bytes + off, len) != 0)
-                return false;
-        }
-        return true;
-    }
-
-
-
-    static inline bool add_signed_checked(uintptr_t base, int32_t off, uintptr_t& out) noexcept
-    {
-        if (off >= 0)
-        {
-            const uintptr_t u = uintptr_t(off);
-            if (u > uintptr_t(-1) - base)
-                return false;
-
-            out = base + u;
-            return true;
-        }
-        else
-        {
-            const uintptr_t u = uintptr_t(-(int64_t)off); // safe for INT32_MIN
-            if (u > base)
-                return false;
-
-            out = base - u;
-            return true;
-        }
-    }
-
-
-
-    static inline bool build_bmh_table(const scan_pattern& pat, size_t& key_idx, uint8_t skip[MEMLIB_MAX_PATTERN_LEN]) noexcept
-    {
-        key_idx = size_t(-1);
-        for (size_t i = pat.length; i-- > 0; )
-        {
-            if (pat.mask[i] == 'x')
-            {
-                key_idx = i;
-                break;
-            }
-        }
-
-        if (key_idx == size_t(-1))
+        const uint8_t* mem = reinterpret_cast<const uint8_t*>(addr);
+        const size_t len = pat.length;
+        if (len == 0)
             return false;
 
-        const uint8_t def = static_cast<uint8_t>((key_idx + 1) > 255 ? 255 : (key_idx + 1));
-        for (size_t i = 0; i < MEMLIB_MAX_PATTERN_LEN; ++i)
-            skip[i] = def;
+        if (pat.mask[0] == 'x' && mem[0] != pat.bytes[0])
+            return false;
 
-        for (size_t i = 0; i < key_idx; ++i)
+        for (size_t i = 1; i < len; ++i)
         {
             if (pat.mask[i] != 'x')
                 continue;
 
-            const uint8_t b = pat.bytes[i];
-            const size_t dist = key_idx - i;
-            skip[b] = static_cast<uint8_t>(dist > 255 ? 255 : dist);
+            if (mem[i] != pat.bytes[i])
+                return false;
         }
-
         return true;
     }
 
 
 
-    static inline uintptr_t scan_range_bmh(uintptr_t begin, uintptr_t end_exclusive, const scan_pattern& pat) noexcept
+    static inline address make_result(uintptr_t found, int32_t offset) noexcept
+    {
+        const intptr_t res = static_cast<intptr_t>(found) + static_cast<intptr_t>(offset);
+        return address(static_cast<uintptr_t>(res));
+    }
+
+
+
+    static inline address scan_range(const scan_pattern& pat, uintptr_t lo, uintptr_t hi, int32_t offset, bool backwards) noexcept
     {
         const size_t pat_len = pat.length;
-        if (pat_len == 0)
-            return invalid_addr;
+        if (pat_len == 0 || hi <= lo)
+            return {};
 
-        if (end_exclusive <= begin)
-            return invalid_addr;
+        const size_t span = static_cast<size_t>(hi - lo);
+        if (span < pat_len)
+            return {};
 
-        if (end_exclusive - begin < uintptr_t(pat_len))
-            return invalid_addr;
+        const uintptr_t last = hi - pat_len;
 
-        const uintptr_t max_pos = end_exclusive - uintptr_t(pat_len);
-
-        run runs[MEMLIB_MAX_PATTERN_LEN]{};
-        const size_t run_count = build_runs(pat, runs);
-
-        // pattern is all wildcards -> first position matches
-        if (run_count == 0)
-            return begin;
-
-        size_t key_idx = 0;
-        uint8_t skip[MEMLIB_MAX_PATTERN_LEN]{};
-        if (!build_bmh_table(pat, key_idx, skip))
+        if (!backwards)
         {
-            for (uintptr_t cur = begin; cur <= max_pos; ++cur)
+            for (uintptr_t p = lo; p <= last; ++p)
             {
-                const uint8_t* mem = reinterpret_cast<const uint8_t*>(cur);
-                if (runs_equal(mem, pat, runs, run_count))
-                    return cur;
+                if (pattern_matches_at(pat, p))
+                    return make_result(p, offset);
             }
-            return invalid_addr;
         }
-
-        const size_t k = key_idx;
-        const uint8_t key_byte = pat.bytes[k];
-
-        uintptr_t cur = begin;
-        while (cur <= max_pos)
+        else
         {
-            const uint8_t* mem = reinterpret_cast<const uint8_t*>(cur);
-            const uint8_t v = mem[k];
-
-            if (v == key_byte)
+            for (uintptr_t p = last;; --p)
             {
-                if (runs_equal(mem, pat, runs, run_count))
-                    return cur;
+                if (pattern_matches_at(pat, p))
+                    return make_result(p, offset);
 
-                ++cur;
-            }
-            else
-            {
-                cur += skip[v];
+                if (p == lo)
+                    break;
             }
         }
 
-        return invalid_addr;
+        return {};
     }
-
-
-
-    static inline bool add_range_intersection(uintptr_t r_start, uintptr_t r_end,
-        uintptr_t scan_start, uintptr_t scan_end,
-        uintptr_t& out_start, uintptr_t& out_end) noexcept
-    {
-        if (r_end <= scan_start || r_start >= scan_end)
-            return false;
-
-        out_start = (r_start < scan_start) ? scan_start : r_start;
-        out_end = (r_end > scan_end) ? scan_end : r_end;
-        return out_end > out_start;
-    }
-
 }
 
 namespace memlib
@@ -311,114 +210,63 @@ namespace memlib
         return (len != 0);
     }
 
-    address find(const scan_pattern& pattern, void* start, size_t length, int32_t offset) noexcept
+    address find(const scan_pattern& pattern, uintptr_t start, uintptr_t end, int32_t offset) noexcept
     {
-        MEMLIB_DEBUG("Scanning {} to {}.", start, (void*)(((uintptr_t)start) + length));
-        if (!start || length == 0 || pattern.length == 0)
+        MEMLIB_DEBUG("Scanning {} to {}.", start, end);
+
+        if (start == 0 || end == 0)
             return {};
 
-        const size_t pat_len = pattern.length;
-        if (length < pat_len)
+        if (pattern.length == 0)
             return {};
 
-        const uintptr_t first = uintptr_t(start);
-        if (uintptr_t(length) > uintptr_t(-1) - first)
-            return {};
+        const bool backwards = (start > end);
+        const uintptr_t lo_req = backwards ? end : start;
+        const uintptr_t hi_req = backwards ? start : end;
 
-        const uintptr_t scan_end = first + uintptr_t(length);
+        uintptr_t cursor = lo_req;
 
-#if MEMLIB_IS_WINDOWS
-        uintptr_t cur = first;
-        while (cur < scan_end)
+        while (cursor < hi_req)
         {
-            MEMORY_BASIC_INFORMATION mbi{};
-            if (::VirtualQuery(reinterpret_cast<void*>(cur), &mbi, sizeof(mbi)) == 0)
+            auto r = query(reinterpret_cast<void*>(cursor));
+            if (!r)
                 break;
 
-            const uintptr_t r_start = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
-            const uintptr_t r_end = r_start + uintptr_t(mbi.RegionSize);
+            uintptr_t r_lo = reinterpret_cast<uintptr_t>(r->start);
+            uintptr_t r_hi = reinterpret_cast<uintptr_t>(r->end);
 
-            if (cur < r_start)
-                cur = r_start;
+            if (r_hi <= cursor)
+                break;
 
-            uintptr_t seg_start = 0, seg_end = 0;
-            if (!add_range_intersection(r_start, r_end, first, scan_end, seg_start, seg_end))
+            if (r_lo < lo_req) r_lo = lo_req;
+            if (r_hi > hi_req) r_hi = hi_req;
+
+            if (r_hi > r_lo)
             {
-                cur = r_end;
-                continue;
-            }
-
-            const bool committed = (mbi.State == MEM_COMMIT);
-            const bool readable = committed && is_readable_protect_win(mbi.Protect);
-
-            if (readable && (seg_end - seg_start >= uintptr_t(pat_len)))
-            {
-                const uintptr_t found = scan_range_bmh(seg_start, seg_end, pattern);
-                if (found != invalid_addr)
+                if (prot_has(r->protection, prot::r))
                 {
-                    uintptr_t out = 0;
-                    if (!add_signed_checked(found, offset, out))
-                        return {};
-
-                    return address(out);
+                    if (region_has(reinterpret_cast<void*>(r_lo), pattern.length, prot::r))
+                    {
+                        address hit = scan_range(pattern, r_lo, r_hi, offset, backwards);
+                        if (hit)
+                            return hit;
+                    }
                 }
             }
 
-            cur = r_end;
+            // next region
+            cursor = reinterpret_cast<uintptr_t>(r->end);
         }
 
         return {};
-
-#elif MEMLIB_IS_LINUX
-        FILE* f = std::fopen("/proc/self/maps", "r");
-        if (!f)
-            return {};
-
-        char line[512];
-        while (std::fgets(line, sizeof(line), f))
-        {
-            uintptr_t r_start = 0, r_end = 0;
-            char perm[5]{};
-
-            if (std::sscanf(line, "%lx-%lx %4s", &r_start, &r_end, perm) != 3)
-                continue;
-
-            if (perm[0] != 'r')
-                continue;
-
-            uintptr_t seg_start = 0, seg_end = 0;
-            if (!add_range_intersection(r_start, r_end, first, scan_end, seg_start, seg_end))
-                continue;
-
-            if (seg_end - seg_start < uintptr_t(pat_len))
-                continue;
-
-            const uintptr_t found = scan_range_bmh(seg_start, seg_end, pattern);
-            if (found != invalid_addr)
-            {
-                uintptr_t out = 0;
-                if (!add_signed_checked(found, offset, out))
-                {
-                    std::fclose(f);
-                    return {};
-                }
-
-                std::fclose(f);
-                return address(out);
-            }
-        }
-
-        std::fclose(f);
-        return {};
-#endif
     }
 
-    address find(const char* combo, void* start, size_t length, int32_t offset) noexcept
+    address find(const char* combo, uintptr_t start, uintptr_t end, int32_t offset) noexcept
     {
         scan_pattern pattern{};
         if (!parse_combo_pattern(combo, pattern))
             return {};
 
-        return find(pattern, start, length, offset);
+        return find(pattern, start, end, offset);
     }
 }

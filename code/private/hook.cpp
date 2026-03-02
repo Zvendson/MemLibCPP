@@ -17,6 +17,8 @@ namespace memlib
     void memlib::leave_hookguard()
     {
         const int prev = g_active_guards.fetch_sub(1, std::memory_order_acq_rel);
+        (void)prev;
+
         MEMLIB_ASSERT(prev > 0, "memlib::leave_hookguard() called more often than memlib::enter_hookguard()");
     }
 

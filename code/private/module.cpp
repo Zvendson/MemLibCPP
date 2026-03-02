@@ -93,7 +93,7 @@ namespace memlib
         auto*      sec    = IMAGE_FIRST_SECTION(nt);
         const WORD nsects = nt->FileHeader.NumberOfSections;
 
-        m_base = reinterpret_cast<void*>(module_base);
+        m_base = module_base;
         m_size = static_cast<size_t>(image_size);
         m_path = get_module_path(m_handle);
 
@@ -119,8 +119,8 @@ namespace memlib
             if (sec->Characteristics & IMAGE_SCN_MEM_WRITE)   pr = pr | prot::w;
             if (sec->Characteristics & IMAGE_SCN_MEM_EXECUTE) pr = pr | prot::x;
 
-            void* section_start = reinterpret_cast<void*>(module_base + va);
-            size_t section_size = std::min<size_t>(vlen, image_size - va);
+            uintptr_t section_start = module_base + va;
+            size_t    section_size = std::min<size_t>(vlen, image_size - va);
 
             m_sections[uint8_t(secid)] = { section_name, secid, section_start, section_size, section_size /* todo: size_padded */, pr};
             MEMLIB_DEBUG(
@@ -150,8 +150,8 @@ namespace memlib
             const char* requested = nullptr;   // nullptr => main program
             module_handle handle = nullptr;
 
-            void* base = nullptr;
-            size_t size = 0;
+            uintptr_t base = 0;
+            size_t    size = 0;
             std::string path{};
             std::string name{};
 
@@ -293,13 +293,13 @@ namespace memlib
     address module::find(const scan_pattern& pattern, section sec, int32_t offset) noexcept
     {
         const auto section = m_sections[uint8_t(sec)];        
-        return memlib::find(pattern, section.start, section.size, offset);
+        return memlib::find(pattern, section.start, section.start + section.size_padded, offset);
     }
 
     address module::find(const char* combo, section sec, int32_t offset) noexcept
     {
         const auto section = m_sections[uint8_t(sec)];
-        return memlib::find(combo, section.start, section.size, offset);
+        return memlib::find(combo, section.start, section.start + section.size_padded, offset);
     }
 
     section_info module::get_section(section sec) const noexcept
@@ -332,6 +332,27 @@ namespace memlib
         }
 
         return out;
+    }
+
+
+
+    bool module::is_valid_address(memlib::address addr) const noexcept
+    {
+		const uintptr_t start = m_base;
+		const uintptr_t end   = static_cast<uintptr_t>(start + m_size);
+		const uintptr_t ptr   = addr.value();
+        return ptr && ptr > start && ptr < end;
+    }
+
+
+
+    bool module::is_valid_address(memlib::address addr, section sec) const noexcept
+    {
+        const auto section    = m_sections[uint8_t(sec)];
+        const uintptr_t start = section.start;
+        const uintptr_t end   = start + section.size_padded;
+        const uintptr_t ptr   = addr.value();
+        return ptr && ptr > start && ptr < end;
     }
 
 

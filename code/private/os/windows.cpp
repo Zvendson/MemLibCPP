@@ -338,9 +338,9 @@ namespace memlib
                 char name[IMAGE_SIZEOF_SHORT_NAME + 1]{};
                 std::memcpy(name, sec[i].Name, 8);
 
-                s.name = name;
-                s.start = reinterpret_cast<void*>(start);
-                s.size = sz;
+                s.name  = name;
+                s.start = start;
+                s.size  = sz;
 
                 prot pr = prot::none;
                 if (sec[i].Characteristics & IMAGE_SCN_MEM_READ)    pr = pr | prot::r;

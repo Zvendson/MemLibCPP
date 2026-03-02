@@ -112,7 +112,7 @@ namespace memlib
         section type = section::unknown;
 
         /* start address of the secton. */
-        void* start = nullptr;
+        uintptr_t start = 0;
 
         /* the real size of the section - no paddings */
         size_t size = 0;
@@ -129,7 +129,7 @@ namespace memlib
         explicit operator bool() const noexcept
         {
             return module != nullptr
-                and start != nullptr
+                and start != 0
                 and size != 0;
         }
     };

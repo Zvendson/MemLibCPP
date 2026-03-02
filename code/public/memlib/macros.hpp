@@ -56,7 +56,7 @@ Helper macros for your reversed structs or w/e.
 	#define ASSERT_OFFSET(struct_, field_, offset_)                        \
 		static_assert(                                                     \
 			offsetof(struct_, field_) == offset_,                          \
-            #struct_ " has incorrect offset: " #field_ " at " # offset_ "." \
+            #struct_ " has incorrect offset: " #field_ " at " #offset_ "." \
         )
 #endif
 

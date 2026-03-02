@@ -35,7 +35,7 @@ namespace memlib
 
     bool parse_combo_pattern(const char* combo, scan_pattern& out) noexcept;
 
-    [[nodiscard]] address find(const scan_pattern& pattern, void* start, size_t length, int32_t offset = 0x0000) noexcept;
-    [[nodiscard]] address find(const char* combo, void* start, size_t length, int32_t offset = 0x0000) noexcept;
+    [[nodiscard]] address find(const scan_pattern& pattern, uintptr_t start, uintptr_t end, int32_t offset = 0x0000) noexcept;
+    [[nodiscard]] address find(const char* combo, uintptr_t start, uintptr_t end, int32_t offset = 0x0000) noexcept;
 
 }
