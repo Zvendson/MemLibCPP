@@ -10,7 +10,7 @@
 
 namespace memlib
 {
-	using scan_callback = memlib::address(*)(memlib::address addr);
+	using multiscan_callback = memlib::address(*)(memlib::address addr, uint32_t index);
 
 	class module
 	{
@@ -39,18 +39,26 @@ namespace memlib
 		bool is_valid_address(memlib::address addr, section sec) const noexcept;
 
 	public:
-		[[nodiscard]] address find(const scan_pattern& pattern, section sec, int32_t offset = 0x0000) noexcept;
-		[[nodiscard]] address find(const char* combo, section sec, int32_t offset = 0x0000) noexcept;
+		[[nodiscard]] address find(const scan_pattern& pattern, section sec, int32_t offset = 0x0000) const noexcept;
+		[[nodiscard]] address find(const char* combo, section sec, int32_t offset = 0x0000) const noexcept;
 
-		[[nodiscard]] address find(const scan_pattern& pattern, section sec, scan_callback cb) noexcept;
-		[[nodiscard]] address find(const char* combo, section sec, scan_callback cb) noexcept;
-
-		template<class T>
-		[[nodiscard]] T find(const scan_pattern& pattern, section sec, int32_t offset = 0x0000) noexcept { return find(pattern, sec, offset).as<T>(); }
+		[[nodiscard]] address find(const scan_pattern& pattern, section sec, scan_callback cb) const noexcept;
+		[[nodiscard]] address find(const char* combo, section sec, scan_callback cb) const noexcept;
 
 		template<class T>
-		[[nodiscard]] T find(const char* combo, section sec, int32_t offset = 0x0000) noexcept { return find(combo, sec, offset).as<T>(); }
+		[[nodiscard]] T find(const scan_pattern& pattern, section sec, int32_t offset = 0x0000) const noexcept { return find(pattern, sec, offset).as<T>(); }
 
+		template<class T>
+		[[nodiscard]] T find(const char* combo, section sec, int32_t offset = 0x0000) const noexcept { return find(combo, sec, offset).as<T>(); }
+
+		[[nodiscard]] std::vector<address> find_all(const scan_pattern& pattern, section sec, scan_callback scan_cb = nullptr) const noexcept;
+		[[nodiscard]] std::vector<address> find_all(const char* combo, section sec, scan_callback scan_cb = nullptr) const noexcept;
+
+		[[nodiscard]] address find_any(std::span<const span_pattern> combos, multiscan_callback scan_cb = nullptr) const noexcept;
+		[[nodiscard]] address find_any(std::initializer_list<span_pattern> combos, multiscan_callback scan_cb = nullptr) const noexcept
+		{
+			return find_any(std::span<const span_pattern>(combos.begin(), combos.size()), scan_cb);
+		}
 	protected:
 		uintptr_t             m_base = 0;
 		size_t                m_size = 0;

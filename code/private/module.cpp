@@ -300,18 +300,23 @@ namespace memlib
 #endif
     }
     
+
     
-    address module::find(const scan_pattern& pattern, section sec, int32_t offset) noexcept
+    address module::find(const scan_pattern& pattern, section sec, int32_t offset) const noexcept
     {
         const auto section = m_sections[uint8_t(sec)];        
         return memlib::find(pattern, section.start, section.start + section.size_padded, offset);
     }
 
-    address module::find(const char* combo, section sec, int32_t offset) noexcept
+
+
+    address module::find(const char* combo, section sec, int32_t offset) const noexcept
     {
         const auto section = m_sections[uint8_t(sec)];
         return memlib::find(combo, section.start, section.start + section.size_padded, offset);
     }
+
+
 
     section_info module::get_section(section sec) const noexcept
     {
@@ -368,21 +373,63 @@ namespace memlib
 
 
 
-    address module::find(const scan_pattern& pattern, section sec, scan_callback cb) noexcept
+    address module::find(const scan_pattern& pattern, section sec, scan_callback cb) const noexcept
     {
         const auto section = m_sections[uint8_t(sec)];
-        auto addr = memlib::find(pattern, section.start, section.size);
+        auto addr = memlib::find(pattern, section.start, section.start + section.size_padded);
         
         return cb ? cb(addr) : addr;
     }
 
 
 
-    address module::find(const char* combo, section sec, scan_callback cb) noexcept
+    address module::find(const char* combo, section sec, scan_callback cb) const noexcept
     {
         const auto section = m_sections[uint8_t(sec)];
-        auto addr = memlib::find(combo, section.start, section.size);
+        auto addr = memlib::find(combo, section.start, section.start + section.size_padded);
 
         return cb ? cb(addr) : addr;
+    }
+
+
+
+    std::vector<address> module::find_all(const scan_pattern& pattern, section sec, scan_callback scan_cb) const noexcept
+    {
+        const auto section = m_sections[uint8_t(sec)];
+        return memlib::find_all(pattern, section.start, section.start + section.size_padded, scan_cb);
+    }
+
+
+
+    std::vector<address> module::find_all(const char* combo, section sec, scan_callback scan_cb) const noexcept
+    {
+        const auto section = m_sections[uint8_t(sec)];
+        return memlib::find_all(combo, section.start, section.start + section.size_padded, scan_cb);
+    }
+
+
+
+    address module::find_any(std::span<const span_pattern> combos, multiscan_callback scan_cb) const noexcept
+    {
+        for (size_t i = 0; i < combos.size(); ++i)
+        {
+			const char* combo = combos[i].combo;
+			const section sec = combos[i].sec;
+            auto result = this->find(combo, sec);
+            if (!result)
+                continue;
+
+            if (scan_cb)
+            {
+                result = scan_cb(result, i);
+                if (!result)
+                    continue;
+            }
+
+            if (result)
+                return result;
+        }
+
+        return nullptr;
     }
 }

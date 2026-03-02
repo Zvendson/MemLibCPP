@@ -269,4 +269,79 @@ namespace memlib
 
         return find(pattern, start, end, offset);
     }
+
+
+
+    std::vector<address> find_all(const scan_pattern& pattern, uintptr_t start, uintptr_t end, scan_callback scan_cb) noexcept
+    {
+        std::vector<address> results;
+        MEMLIB_DEBUG("Scanning {} to {}.", start, end);
+
+        if (start == 0 || end == 0)
+            return {};
+
+        if (pattern.length == 0)
+            return {};
+
+        const bool backwards = (start > end);
+        const uintptr_t lo_req = backwards ? end : start;
+        const uintptr_t hi_req = backwards ? start : end;
+
+        uintptr_t cursor = lo_req;
+
+        while (cursor < hi_req)
+        {
+            auto r = query(reinterpret_cast<void*>(cursor));
+            if (!r)
+                break;
+
+            uintptr_t r_lo = reinterpret_cast<uintptr_t>(r->start);
+            uintptr_t r_hi = reinterpret_cast<uintptr_t>(r->end);
+
+            if (r_hi <= cursor)
+                break;
+
+            if (r_lo < lo_req) r_lo = lo_req;
+            if (r_hi > hi_req) r_hi = hi_req;
+
+            if (r_hi > r_lo)
+            {
+                if (prot_has(r->protection, prot::r))
+                {
+                    if (region_has(reinterpret_cast<void*>(r_lo), pattern.length, prot::r))
+                    {
+                        address hit = scan_range(pattern, r_lo, r_hi, 0, backwards);
+                        if (!hit)
+                            continue;
+
+                        if (scan_cb)
+                        {
+                            hit = scan_cb(hit);
+                            if (!hit)
+                                continue;
+                        }
+
+                        results.push_back(hit);                        
+                    }
+                }
+            }
+
+            // next region
+            cursor = reinterpret_cast<uintptr_t>(r->end);
+        }
+
+        return {};
+    }
+
+
+
+    std::vector<address> find_all(const char* combo, uintptr_t start, uintptr_t end, scan_callback scan_cb) noexcept
+    {
+        scan_pattern pattern{};
+        if (!parse_combo_pattern(combo, pattern))
+            return {};
+
+        return find_all(pattern, start, end, scan_cb);
+    }
+    
 }
