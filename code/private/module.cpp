@@ -68,15 +68,18 @@ namespace
 
 namespace memlib
 {
-	module::module(const char* modulename)
-	{
-        m_handle = get_module_handle(modulename);
-        if (!m_handle)
+	module::module(const char* modulename) : module(get_module_handle(modulename))
+	{}
+
+    module::module(const module_handle& mod)
+    {
+        if (!mod)
         {
-            const char* label = modulename ? modulename : "<current module>";
-            MEMLIB_ERROR("Could not find module handle of {}", label);
+            MEMLIB_ERROR("Invalid module handle: {}", (void*)mod);
             return;
         }
+
+        m_handle = mod;
 
 #if MEMLIB_IS_WINDOWS
         auto* nt = get_nt_headers_from_module(m_handle);
@@ -88,9 +91,9 @@ namespace memlib
         }
 
         const uintptr_t module_base = reinterpret_cast<uintptr_t>(m_handle);
-        const uintptr_t image_size  = nt->OptionalHeader.SizeOfImage;
+        const uintptr_t image_size = nt->OptionalHeader.SizeOfImage;
 
-        auto*      sec    = IMAGE_FIRST_SECTION(nt);
+        auto* sec = IMAGE_FIRST_SECTION(nt);
         const WORD nsects = nt->FileHeader.NumberOfSections;
 
         m_base = module_base;
@@ -101,7 +104,7 @@ namespace memlib
 
         for (WORD i = 0; i < nsects; ++i, ++sec)
         {
-            uintptr_t va   = sec->VirtualAddress;
+            uintptr_t va = sec->VirtualAddress;
             size_t    vlen = static_cast<size_t>(std::max(sec->Misc.VirtualSize, sec->SizeOfRawData));
 
             if (va >= image_size)
@@ -122,7 +125,7 @@ namespace memlib
             uintptr_t section_start = module_base + va;
             size_t    section_size = std::min<size_t>(vlen, image_size - va);
 
-            m_sections[uint8_t(secid)] = { section_name, secid, section_start, section_size, section_size /* todo: size_padded */, pr};
+            m_sections[uint8_t(secid)] = { section_name, secid, section_start, section_size, section_size /* todo: size_padded */, pr };
             MEMLIB_DEBUG(
                 "[Scanner] Found section \"{}\" at {} and size 0x{:X} ({}{}{}).",
                 section_name,
@@ -147,8 +150,12 @@ namespace memlib
         // This gives us PT_LOAD segments which we map to our coarse section categories.
         struct ctx
         {
-            const char* requested = nullptr;   // nullptr => main program
             module_handle handle = nullptr;
+
+            // Identity of the target module resolved from the handle:
+            std::string target_path{};   // empty => main program
+            uintptr_t   target_l_addr{}; // link_map::l_addr (can be 0)
+            bool        target_is_main = false;
 
             uintptr_t base = 0;
             size_t    size = 0;
@@ -159,101 +166,105 @@ namespace memlib
             bool found = false;
         } c;
 
-        c.requested = modulename;
         c.handle = m_handle;
 
-        auto cb = [](dl_phdr_info* info, size_t, void* data) -> int
+        // Resolve link_map for this handle
+        link_map* lm = nullptr;
+        if (::dlinfo(m_handle, RTLD_DI_LINKMAP, &lm) != 0 || !lm)
         {
-            auto* c = static_cast<ctx*>(data);
+            MEMLIB_ERROR("dlinfo(RTLD_DI_LINKMAP) failed for handle {}", (void*)m_handle);
+            m_handle = nullptr;
+            return;
+        }
 
-            const std::string_view path = (info->dlpi_name && *info->dlpi_name) ? info->dlpi_name : "";
+        c.target_path = (lm->l_name && *lm->l_name) ? lm->l_name : ""; // empty for main exe in many cases
+        c.target_l_addr = static_cast<uintptr_t>(lm->l_addr);
+        c.target_is_main = c.target_path.empty();
 
-            if (!match_name(path, c->requested))
+        auto cb = [](dl_phdr_info* info, size_t, void* data) -> int
             {
-                return 0;
-            }
+                auto* c = static_cast<ctx*>(data);
 
-            c->found = true;
+                const std::string_view info_path =
+                    (info->dlpi_name && *info->dlpi_name) ? info->dlpi_name : "";
 
-            // On Linux, dlpi_addr can be 0 for the main executable (non-PIE). Do NOT treat it as the base.
-            // Compute base/size from PT_LOAD segments instead (these are the actually mapped ranges).
-            uintptr_t min_addr = std::numeric_limits<uintptr_t>::max();
-            uintptr_t max_addr = 0;
-
-            // Path/name
-            c->path = path.empty() ? self_exe_path() : std::string(path);
-            const auto pos = c->path.find_last_of('/');
-            c->name = (pos == std::string::npos) ? c->path : c->path.substr(pos + 1);
-
-            // Compute base/size and fill coarse "sections" based on PT_LOAD segments.
-
-            for (int i = 0; i < info->dlpi_phnum; ++i)
-            {
-                const auto& ph = info->dlpi_phdr[i];
-                if (ph.p_type != PT_LOAD)
-                    continue;
-
-                const uintptr_t seg_start = (info->dlpi_addr == 0)
-                    ? static_cast<uintptr_t>(ph.p_vaddr)
-                    : static_cast<uintptr_t>(info->dlpi_addr) + static_cast<uintptr_t>(ph.p_vaddr);
-                const uintptr_t seg_end   = seg_start + static_cast<uintptr_t>(ph.p_memsz);
-
-                min_addr = std::min(min_addr, seg_start);
-                max_addr = std::max(max_addr, seg_end);
-
-                const prot pr = phdr_to_prot(ph.p_flags);
-
-                section st = section::unknown;
-                const char* sname = "PT_LOAD";
-
-                if (prot_has(pr, prot::x))
+                // Match the module represented by the handle
+                if (c->target_is_main)
                 {
-                    st = section::code;
-                    sname = ".text";
-                }
-                else if (prot_has(pr, prot::w))
-                {
-                    st = section::rw_data;
-                    sname = ".data";
+                    // main executable is typically represented by empty dlpi_name
+                    if (!info_path.empty())
+                        return 0;
                 }
                 else
                 {
-                    st = section::ro_data;
-                    sname = ".rodata";
+                    // For DSOs, dlpi_name is usually the loader path.
+                    // Compare string-equal first (cheap), optionally upgrade to realpath/inode match later.
+                    if (info_path != c->target_path)
+                        return 0;
                 }
 
-                section_info si{};
-                si.name = sname;
-                si.type = st;
-                si.start = seg_start;
-                si.size = static_cast<size_t>(seg_end - seg_start);
-                si.size_padded = si.size;
-                si.protection = pr;
-                si.module = c->handle;
+                c->found = true;
 
-                // Keep the first segment for each category (good enough for scanning).
-                set_if_empty(c->sections[uint8_t(st)], si);
-            }
+                // Path/name
+                c->path = info_path.empty() ? self_exe_path() : std::string(info_path);
+                const auto pos = c->path.find_last_of('/');
+                c->name = (pos == std::string::npos) ? c->path : c->path.substr(pos + 1);
 
-            if (min_addr != std::numeric_limits<uintptr_t>::max() && max_addr > min_addr)
-            {
-                c->base = min_addr;
-                c->size = static_cast<size_t>(max_addr - min_addr);
-            }
-            else
-            {
-                c->base = 0;
-                c->size = 0;
-            }
-            return 1; // stop iteration
-        };
+                uintptr_t min_addr = std::numeric_limits<uintptr_t>::max();
+                uintptr_t max_addr = 0;
+
+                for (int i = 0; i < info->dlpi_phnum; ++i)
+                {
+                    const auto& ph = info->dlpi_phdr[i];
+                    if (ph.p_type != PT_LOAD)
+                        continue;
+
+                    // NOTE: This is your existing logic.
+                    const uintptr_t seg_start = (info->dlpi_addr == 0)
+                        ? static_cast<uintptr_t>(ph.p_vaddr)
+                        : static_cast<uintptr_t>(info->dlpi_addr) + static_cast<uintptr_t>(ph.p_vaddr);
+
+                    const uintptr_t seg_end = seg_start + static_cast<uintptr_t>(ph.p_memsz);
+
+                    min_addr = std::min(min_addr, seg_start);
+                    max_addr = std::max(max_addr, seg_end);
+
+                    const prot pr = phdr_to_prot(ph.p_flags);
+
+                    section st = section::unknown;
+                    const char* sname = "PT_LOAD";
+
+                    if (prot_has(pr, prot::x)) { st = section::code;    sname = ".text"; }
+                    else if (prot_has(pr, prot::w)) { st = section::rw_data; sname = ".data"; }
+                    else { st = section::ro_data; sname = ".rodata"; }
+
+                    section_info si{};
+                    si.name = sname;
+                    si.type = st;
+                    si.start = seg_start;
+                    si.size = static_cast<size_t>(seg_end - seg_start);
+                    si.size_padded = si.size;
+                    si.protection = pr;
+                    si.module = c->handle;
+
+                    set_if_empty(c->sections[uint8_t(st)], si);
+                }
+
+                if (min_addr != std::numeric_limits<uintptr_t>::max() && max_addr > min_addr)
+                {
+                    c->base = min_addr;
+                    c->size = static_cast<size_t>(max_addr - min_addr);
+                }
+
+                return 1;
+            };
 
         ::dl_iterate_phdr(cb, &c);
 
         if (!c.found || !c.base || c.size == 0)
         {
             m_handle = nullptr;
-            const char* label = modulename ? modulename : "<main program>";
+            const char* label = c.target_is_main ? "<main program>" : c.target_path.c_str();
             MEMLIB_ERROR("Could not resolve module info for {}", label);
             return;
         }
@@ -287,7 +298,7 @@ namespace memlib
             return;
         }
 #endif
-	}
+    }
     
     
     address module::find(const scan_pattern& pattern, section sec, int32_t offset) noexcept

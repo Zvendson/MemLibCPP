@@ -155,6 +155,12 @@ namespace
 
         return std::filesystem::path(std::string(name));
     }
+
+    static bool ends_with(std::string_view s, std::string_view suffix) noexcept
+    {
+        return s.size() >= suffix.size()
+            && s.substr(s.size() - suffix.size()) == suffix;
+    }
 }
 
 namespace memlib
@@ -164,21 +170,23 @@ namespace memlib
         if (!name || !*name)
             return ::dlopen(nullptr, RTLD_NOW);
 
-        void* h = ::dlopen(name, RTLD_NOLOAD | RTLD_NOW);
-        if (h)
+        if (void* h = ::dlopen(name, RTLD_NOLOAD | RTLD_LAZY))
             return h;
 
-        std::string alt;
-        alt.reserve(std::strlen(name) + 6);
         if (std::strchr(name, '/'))
             return nullptr;
 
-        alt = "lib";
-        alt += name;
-        if (alt.rfind(".so") == std::string::npos)
+        std::string alt;
+        alt.reserve(std::strlen(name) + 8);
+        alt = name;
+
+        if (!alt.starts_with("lib"))
+            alt = "lib" + alt;
+
+        if (!ends_with(alt, ".so") && alt.find(".so.") == std::string::npos)
             alt += ".so";
 
-        return ::dlopen(alt.c_str(), RTLD_NOLOAD | RTLD_NOW);
+        return ::dlopen(alt.c_str(), RTLD_NOLOAD | RTLD_LAZY);
     }
 
 
