@@ -521,7 +521,7 @@ namespace memlib
                     c->out = {
                         sname,
                         type,
-                        reinterpret_cast<void*>(seg_start),
+                        seg_start,
                         static_cast<size_t>(seg_end - seg_start),
                         static_cast<size_t>(seg_end - seg_start),
                         pr,

@@ -225,7 +225,7 @@ namespace memlib
                 section_info si{};
                 si.name = sname;
                 si.type = st;
-                si.start = reinterpret_cast<void*>(seg_start);
+                si.start = seg_start;
                 si.size = static_cast<size_t>(seg_end - seg_start);
                 si.size_padded = si.size;
                 si.protection = pr;
@@ -237,12 +237,12 @@ namespace memlib
 
             if (min_addr != std::numeric_limits<uintptr_t>::max() && max_addr > min_addr)
             {
-                c->base = reinterpret_cast<void*>(min_addr);
+                c->base = min_addr;
                 c->size = static_cast<size_t>(max_addr - min_addr);
             }
             else
             {
-                c->base = nullptr;
+                c->base = 0;
                 c->size = 0;
             }
             return 1; // stop iteration
