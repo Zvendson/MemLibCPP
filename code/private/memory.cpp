@@ -212,7 +212,7 @@ namespace memlib
 
     address find(const scan_pattern& pattern, uintptr_t start, uintptr_t end, int32_t offset) noexcept
     {
-        MEMLIB_DEBUG("Scanning {} to {}.", start, end);
+        MEMLIB_DEBUG("Scanning 0x{:x} to 0x{:x}.", start, end);
 
         if (start == 0 || end == 0)
             return {};
@@ -275,7 +275,7 @@ namespace memlib
     std::vector<address> find_all(const scan_pattern& pattern, uintptr_t start, uintptr_t end, scan_callback scan_cb) noexcept
     {
         std::vector<address> results;
-        MEMLIB_DEBUG("Scanning {} to {}.", start, end);
+        MEMLIB_DEBUG("Scanning 0x{:x} to 0x{:x}.", start, end);
 
         if (start == 0 || end == 0)
             return {};

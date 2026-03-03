@@ -127,7 +127,7 @@ namespace memlib
 
             m_sections[uint8_t(secid)] = { section_name, secid, section_start, section_size, section_size /* todo: size_padded */, pr };
             MEMLIB_DEBUG(
-                "[Scanner] Found section \"{}\" at {} and size 0x{:X} ({}{}{}).",
+                "[Scanner] Found section \"{}\" at 0x{:x} and size 0x{:X} ({}{}{}).",
                 section_name,
                 section_start,
                 section_size,
@@ -279,7 +279,7 @@ namespace memlib
                 continue;
 
             MEMLIB_DEBUG(
-                "[Scanner] Found section \"{}\" at {} and size 0x{:X} ({}{}{}).",
+                "[Scanner] Found section \"{}\" at 0x{:x} and size 0x{:X} ({}{}{}).",
                 c.sections[i].name,
                 c.sections[i].start,
                 c.sections[i].size_padded,
