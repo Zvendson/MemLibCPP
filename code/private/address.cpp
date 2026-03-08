@@ -56,6 +56,9 @@ namespace
             const auto disp = static_cast<int64_t>(op.mem.disp.value);
             return memlib::address(static_cast<memlib::address::value_type>(next_ip + disp));
         }
+#else
+        UNREFERENCED_PARAMETER(inst);
+        UNREFERENCED_PARAMETER(instr_addr);
 #endif
 
         if (op.mem.base == ZYDIS_REGISTER_NONE && op.mem.index == ZYDIS_REGISTER_NONE)
@@ -176,10 +179,7 @@ namespace memlib
         if (!zydis_decode(ptr(), inst, ops))
             return {};
 
-        // LEA computes an address, it does not dereference memory.
-        if (inst.mnemonic == ZYDIS_MNEMONIC_LEA)
-            return {};
-
+        // 1) Prefer statically resolvable memory operands.
         for (uint8_t i = 0; i < inst.operand_count_visible; ++i)
         {
             const auto& op = ops[i];
@@ -187,10 +187,37 @@ namespace memlib
                 continue;
 
             const address addr = resolve_memory_operand_storage(*this, inst, op);
-            if (!addr)
-                continue;
+            if (addr)
+                return addr;
+        }
 
-            return addr;
+        // 2) Handle reliable immediate-address forms.
+        switch (inst.mnemonic)
+        {
+            case ZYDIS_MNEMONIC_MOV:
+            case ZYDIS_MNEMONIC_PUSH:
+            {
+                for (uint8_t i = 0; i < inst.operand_count_visible; ++i)
+                {
+                    const auto& op = ops[i];
+                    if (op.type != ZYDIS_OPERAND_TYPE_IMMEDIATE)
+                        continue;
+
+                    if (op.imm.is_relative)
+                        continue;
+
+                #if MEMLIB_IS_64
+                    return address(static_cast<value_type>(op.imm.value.u));
+                #else
+                    return address(static_cast<value_type>(static_cast<uint32_t>(op.imm.value.u)));
+                #endif
+                }
+
+                break;
+            }
+
+            default:
+                break;
         }
 
         return {};
