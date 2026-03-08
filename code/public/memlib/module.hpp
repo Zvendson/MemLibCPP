@@ -10,7 +10,7 @@
 
 namespace memlib
 {
-	using multiscan_callback = memlib::address(*)(memlib::address addr, uint32_t index);
+	using multiscan_callback = memlib::address(*)(memlib::address addr, size_t index);
 
 	class module
 	{
