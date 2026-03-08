@@ -20,12 +20,10 @@ namespace memlib
 		module(const section_info& section) : module(section.module) {}
 
 	public:
-		explicit operator bool() const noexcept
-		{
-			return m_handle != nullptr;
-		}
+		explicit operator bool() const noexcept { return is_valid(); }
 
 	public:
+		inline bool                  is_valid() const noexcept { return m_handle != nullptr; }
 		inline uintptr_t             get_base() const noexcept { return m_base; }
 		inline size_t                get_size() const noexcept { return m_size; }
 		inline uintptr_t             get_end()  const noexcept { return m_base + m_size; }
@@ -60,9 +58,9 @@ namespace memlib
 			return find_any(std::span<const span_pattern>(combos.begin(), combos.size()), scan_cb);
 		}
 	protected:
-		uintptr_t             m_base = 0;
-		size_t                m_size = 0;
-		std::filesystem::path m_path{};
+		uintptr_t             m_base                            = 0;
+		size_t                m_size                            = 0;
+		std::filesystem::path m_path                            = {};
 		section_info          m_sections[uint8_t(section::max)] = {};
 		module_handle         m_handle                          = nullptr;
 	};
