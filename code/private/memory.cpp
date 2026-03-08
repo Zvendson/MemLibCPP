@@ -330,7 +330,7 @@ namespace memlib
             cursor = reinterpret_cast<uintptr_t>(r->end);
         }
 
-        return {};
+        return results;
     }
 
 
