@@ -415,9 +415,14 @@ namespace memlib
         {
 			const char* combo = combos[i].combo;
 			const section sec = combos[i].sec;
-            auto result = this->find(combo, sec);
+            address result = this->find(combo, sec);
             if (!result)
+            {
+                MEMLIB_DEBUG("[find_any] Pattern '{}' at index {} has not been found!", combo, i);
                 continue;
+            }
+
+            MEMLIB_DEBUG("[find_any] Pattern found at {} with index {}.", result.ptr(), i);
 
             if (scan_cb)
             {
