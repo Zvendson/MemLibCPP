@@ -256,8 +256,8 @@ namespace memlib
 
         region_info r{};
 
-        r.start = mbi.BaseAddress;
-        r.end = static_cast<uint8_t*>(mbi.BaseAddress) + mbi.RegionSize;
+        r.start = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+        r.end = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
         r.protection = (mbi.State == MEM_COMMIT) ? win_to_prot(mbi.Protect) : prot::none;
 
         if (mbi.Type == MEM_IMAGE)
@@ -312,7 +312,7 @@ namespace memlib
         if (!mod)
             return std::nullopt;
 
-        auto* base = static_cast<uint8_t*>(mod->base);
+        auto base = mod->base;
         auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
         if (!dos || dos->e_magic != IMAGE_DOS_SIGNATURE)
             return std::nullopt;
@@ -328,7 +328,7 @@ namespace memlib
 
         for (uint16_t i = 0; i < count; ++i)
         {
-            const uintptr_t start = reinterpret_cast<uintptr_t>(base + sec[i].VirtualAddress);
+            const uintptr_t start = base + sec[i].VirtualAddress;
             const size_t    sz = static_cast<size_t>(std::max(sec[i].Misc.VirtualSize, sec[i].SizeOfRawData));
             const uintptr_t end = start + sz;
 
@@ -374,7 +374,7 @@ namespace memlib
         auto path = get_module_path(hmod);
 
         module_info out{};
-        out.base = mi.lpBaseOfDll;
+        out.base = reinterpret_cast<uintptr_t>(mi.lpBaseOfDll);
         out.size = static_cast<size_t>(mi.SizeOfImage);
         out.path = path;
         out.name = path.empty() ? "" : path.filename().string();

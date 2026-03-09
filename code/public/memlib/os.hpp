@@ -126,36 +126,38 @@ namespace memlib
         /* module reference */
         module_handle module = nullptr;
 
-        explicit operator bool() const noexcept
+		inline bool is_valid() const noexcept
         {
             return module != nullptr
                 and start != 0
                 and size != 0;
         }
+
+        explicit operator bool() const noexcept { return is_valid(); }
     };
 
 
 
     struct region_info
     {
-        void*                 start      = nullptr;
-        void*                 end        = nullptr;
+        uintptr_t             start      = 0;
+        uintptr_t             end        = 0;
         prot                  protection = prot::none;
         std::filesystem::path mapped_path{};
 
-        explicit operator bool() const noexcept { return start != nullptr && end != nullptr && start < end; }
+        explicit operator bool() const noexcept { return start != 0 && end != 0 && start < end; }
     };
 
 
 
     struct module_info
     {
-        void*                 base = nullptr;
+        uintptr_t             base = 0;
         size_t                size = 0;
         std::filesystem::path path{};
         std::string           name{};
 
-        explicit operator bool() const noexcept { return base != nullptr; }
+        explicit operator bool() const noexcept { return base != 0; }
     };
 
 

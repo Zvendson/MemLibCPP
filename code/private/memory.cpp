@@ -55,8 +55,8 @@ namespace
         if (!r)
             return false;
 
-        const auto start = reinterpret_cast<uintptr_t>(r->start);
-        const auto end   = reinterpret_cast<uintptr_t>(r->end);
+        const auto start = r->start;
+        const auto end   = r->end;
         const auto addr  = reinterpret_cast<uintptr_t>(p);
 
         if (!contains_range(start, end, addr, bytes))
@@ -232,8 +232,8 @@ namespace memlib
             if (!r)
                 break;
 
-            uintptr_t r_lo = reinterpret_cast<uintptr_t>(r->start);
-            uintptr_t r_hi = reinterpret_cast<uintptr_t>(r->end);
+            uintptr_t r_lo = r->start;
+            uintptr_t r_hi = r->end;
 
             if (r_hi <= cursor)
                 break;
@@ -255,7 +255,7 @@ namespace memlib
             }
 
             // next region
-            cursor = reinterpret_cast<uintptr_t>(r->end);
+            cursor = r->end;
         }
 
         return {};
@@ -295,8 +295,8 @@ namespace memlib
             if (!r)
                 break;
 
-            uintptr_t r_lo = reinterpret_cast<uintptr_t>(r->start);
-            uintptr_t r_hi = reinterpret_cast<uintptr_t>(r->end);
+            uintptr_t r_lo = r->start;
+            uintptr_t r_hi = r->end;
 
             if (r_hi <= cursor)
                 break;
@@ -327,7 +327,7 @@ namespace memlib
             }
 
             // next region
-            cursor = reinterpret_cast<uintptr_t>(r->end);
+            cursor = r->end;
         }
 
         return results;

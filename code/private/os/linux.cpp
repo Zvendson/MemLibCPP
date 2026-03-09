@@ -293,8 +293,8 @@ namespace memlib
                 continue;
 
             region_info r{};
-            r.start = reinterpret_cast<void*>(s);
-            r.end   = reinterpret_cast<void*>(e);
+            r.start = s;
+            r.end   = e;
             r.protection = perms_to_prot(perm);
             r.mapped_path = mapped;
 
@@ -358,8 +358,8 @@ namespace memlib
         // but only if p equals the region start (safe).
         if (size == 0)
         {
-            if (auto r = query(p); r && r->start == p)
-                size = static_cast<size_t>(reinterpret_cast<uintptr_t>(r->end) - reinterpret_cast<uintptr_t>(r->start));
+            if (auto r = query(p); r && r->start == reinterpret_cast<uintptr_t>(p))
+                size = static_cast<size_t>(r->end - r->start);
             else
                 return false;
         }
@@ -382,10 +382,13 @@ namespace memlib
     {
         Dl_info di{};
         if (::dladdr(p, &di) == 0 || !di.dli_fbase)
+        {
+			MEMLIB_DEBUG("dladdr failed for address {}: {}", p, std::strerror(errno));
             return std::nullopt;
+        }
 
         module_info out{};
-        out.base = di.dli_fbase;
+        out.base = reinterpret_cast<uintptr_t>(di.dli_fbase);
 
         out.path = (di.dli_fname && *di.dli_fname)
             ? std::filesystem::path(di.dli_fname)
@@ -401,56 +404,69 @@ namespace memlib
 
         if (auto range = module_range_from_maps(out.path, base))
         {
-            out.base = reinterpret_cast<void*>(range->first); // maps is more trustworthy
+            out.base = range->first; // maps is more trustworthy
             out.size = static_cast<size_t>(range->second - range->first);
         }
         else
         {
-            // Fallback: compute size from program headers via dl_iterate_phdr
             struct ctx
             {
+                uintptr_t addr = 0;
                 uintptr_t base = 0;
                 size_t size = 0;
-                std::filesystem::path path{};
                 bool found = false;
-            } c{ base, 0, out.path, false };
+            };
+
+            ctx c{ reinterpret_cast<uintptr_t>(p), 0, 0, false };
 
             auto cb = [](dl_phdr_info* info, size_t, void* data) -> int
                 {
                     auto* c = static_cast<ctx*>(data);
 
-                    const std::filesystem::path path = info_path(info).lexically_normal();
-                    if (path != c->path.lexically_normal())
-                        return 0;
-
+                    uintptr_t min_start = UINTPTR_MAX;
                     uintptr_t max_end = 0;
+                    bool contains_addr = false;
+
                     for (int i = 0; i < info->dlpi_phnum; ++i)
                     {
                         const auto& ph = info->dlpi_phdr[i];
                         if (ph.p_type != PT_LOAD)
                             continue;
 
-                        const uintptr_t seg_end =
+                        const uintptr_t seg_start =
                             static_cast<uintptr_t>(info->dlpi_addr) +
-                            static_cast<uintptr_t>(ph.p_vaddr) +
-                            static_cast<uintptr_t>(ph.p_memsz);
+                            static_cast<uintptr_t>(ph.p_vaddr);
 
+                        const uintptr_t seg_end =
+                            seg_start + static_cast<uintptr_t>(ph.p_memsz);
+
+                        min_start = std::min(min_start, seg_start);
                         max_end = std::max(max_end, seg_end);
+
+                        if (c->addr >= seg_start && c->addr < seg_end)
+                            contains_addr = true;
                     }
 
-                    c->size = (max_end > static_cast<uintptr_t>(info->dlpi_addr))
-                        ? static_cast<size_t>(max_end - static_cast<uintptr_t>(info->dlpi_addr))
-                        : 0;
+                    if (!contains_addr || min_start == UINTPTR_MAX || max_end <= min_start)
+                        return 0;
 
-                    c->base = static_cast<uintptr_t>(info->dlpi_addr);
+                    c->base = min_start;
+                    c->size = static_cast<size_t>(max_end - min_start);
                     c->found = true;
                     return 1;
                 };
 
             ::dl_iterate_phdr(cb, &c);
 
-            out.base = reinterpret_cast<void*>(c.base);
-            out.size = c.size;
+            if (c.found)
+            {
+                out.base = c.base;
+                out.size = c.size;
+            }
+            else
+            {
+                MEMLIB_DEBUG("dl_iterate_phdr could not resolve module range for '{}'", out.path.string());
+            }
         }
 
         return out;

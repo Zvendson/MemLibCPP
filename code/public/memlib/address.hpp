@@ -4,6 +4,8 @@
 
 namespace memlib
 {
+	using rva_t = std::optional<size_t>;
+
     /**
      * @brief Wrapper around a raw process address.
      *
@@ -203,7 +205,7 @@ namespace memlib
          *
          * Note that RVA 0 is valid, so std::optional is used to distinguish failure.
          */
-        [[nodiscard]] std::optional<value_type> rva() const noexcept;
+        [[nodiscard]] rva_t rva() const noexcept;
 
         /**
          * @brief Returns a new address offset by a signed byte displacement.
@@ -328,5 +330,5 @@ namespace memlib
         /** @brief Stored raw address value. */
         value_type m_value = 0;
     };
-
 }
+

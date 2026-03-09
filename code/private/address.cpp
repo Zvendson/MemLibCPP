@@ -2,6 +2,7 @@
 
 
 #include <Zydis/Zydis.h>
+#include "internal.hpp"
 
 namespace
 {
@@ -150,19 +151,31 @@ namespace memlib
 
 
 
-    std::optional<address::value_type> address::rva() const noexcept
+    rva_t address::rva() const noexcept
     {
-        const auto mod = module();
+        const auto mod = this->module();
         if (!mod || !mod->base)
+        {
+            MEMLIB_DEBUG("Cannot compute RVA for address {} because it does not belong to a known module.", ptr());
             return std::nullopt;
+        }
 
-        const value_type base = reinterpret_cast<value_type>(mod->base);
+        const size_t base = static_cast<size_t>(mod->base);
         if (m_value < base)
+        {
+            const auto dbgbase = address(mod->base);
+            MEMLIB_DEBUG("Cannot compute RVA for address {} because it is below the module base {}.", ptr(), dbgbase);
             return std::nullopt;
+        }
 
-        const value_type rva = m_value - base;
+        const size_t rva = m_value - base;
         if (rva >= mod->size)
+        {
+            const auto dbgbase = address(mod->base);
+            const auto end = dbgbase + mod->size;
+            MEMLIB_DEBUG("Cannot compute RVA for address {} because it is outside the module range [{}, {}).", ptr(), dbgbase, end);
             return std::nullopt;
+        }
 
         return rva;
     }
