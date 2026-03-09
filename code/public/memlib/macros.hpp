@@ -32,6 +32,46 @@
 #endif
 
 
+
+// std::format
+#if defined(MEMLIB_DISABLE_STD_FORMAT)
+    #define MEMLIB_HAS_STD_FORMAT 0
+
+#elif defined(__has_include)
+    #if __has_include(<format>)
+        #include <format>
+        #define MEMLIB_HAS_STD_FORMAT 1
+    #else
+        #define MEMLIB_HAS_STD_FORMAT 0
+    #endif
+
+#else
+    #define MEMLIB_HAS_STD_FORMAT 0
+#endif
+
+
+
+// fmt / spdlog bundled fmt
+#if defined(MEMLIB_DISABLE_FMT)
+    #define MEMLIB_HAS_FMT 0
+
+#elif defined(__has_include)
+    #if __has_include(<spdlog/fmt/fmt.h>)
+        #include <spdlog/fmt/fmt.h>
+        #define MEMLIB_HAS_FMT 1
+    #elif __has_include(<fmt/format.h>)
+        #include <fmt/format.h>
+        #define MEMLIB_HAS_FMT 1
+    #else
+        #define MEMLIB_HAS_FMT 0
+    #endif
+
+#else
+    #define MEMLIB_HAS_FMT 0
+#endif
+
+
+
 /*
 Helper macros for your reversed structs or w/e.
 */

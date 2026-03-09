@@ -332,3 +332,88 @@ namespace memlib
     };
 }
 
+#if MEMLIB_HAS_STD_FORMAT
+namespace std
+{
+    template <>
+    struct formatter<memlib::address, char>
+    {
+        constexpr auto parse(std::format_parse_context& ctx) -> std::format_parse_context::iterator
+        {
+            auto it = ctx.begin();
+            if (it != ctx.end() && *it != '}')
+                throw std::format_error("invalid format for memlib::address");
+            return it;
+        }
+
+        auto format(const memlib::address& value, std::format_context& ctx) const -> std::format_context::iterator
+        {
+            return std::format_to(ctx.out(), "0x{:X}", static_cast<std::uintptr_t>(value.value()));
+        }
+    };
+
+    template <>
+    struct formatter<memlib::rva_t, char>
+    {
+        constexpr auto parse(std::format_parse_context& ctx) -> std::format_parse_context::iterator
+        {
+            auto it = ctx.begin();
+            const auto end = ctx.end();
+
+            if (it != end && *it != '}')
+                throw std::format_error("invalid format for memlib::rva_t");
+
+            return it;
+        }
+
+        auto format(const memlib::rva_t& value, std::format_context& ctx) const -> std::format_context::iterator
+        {
+            if (!value.has_value())
+                return std::format_to(ctx.out(), "n/a");
+
+            return std::format_to(ctx.out(), "0x{:X}", static_cast<std::size_t>(*value));
+        }
+    };
+}
+#endif
+
+#if MEMLIB_HAS_FMT
+template <>
+struct fmt::formatter<memlib::address>
+{
+    constexpr auto parse(fmt::format_parse_context& ctx) -> fmt::format_parse_context::iterator
+    {
+        return ctx.begin();
+    }
+
+    template <typename FormatContext>
+    auto format(const memlib::address& value, FormatContext& ctx) const -> typename FormatContext::iterator
+    {
+        return fmt::format_to(ctx.out(), "{}", value.ptr());
+    }
+};
+
+template <>
+struct fmt::formatter<memlib::rva_t>
+{
+    constexpr auto parse(fmt::format_parse_context& ctx) -> fmt::format_parse_context::iterator
+    {
+        auto it = ctx.begin();
+        const auto end = ctx.end();
+
+        if (it != end && *it != '}')
+            throw fmt::format_error("invalid format for memlib::rva_t");
+
+        return it;
+    }
+
+    template <typename FormatContext>
+    auto format(const memlib::rva_t& value, FormatContext& ctx) const -> typename FormatContext::iterator
+    {
+        if (!value.has_value())
+            return fmt::format_to(ctx.out(), "n/a");
+
+        return fmt::format_to(ctx.out(), "0x{:X}", *value);
+    }
+};
+#endif
