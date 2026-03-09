@@ -163,17 +163,14 @@ namespace memlib
         const size_t base = static_cast<size_t>(mod->base);
         if (m_value < base)
         {
-            const auto dbgbase = address(mod->base);
-            MEMLIB_DEBUG("Cannot compute RVA for address {} because it is below the module base {}.", ptr(), dbgbase);
+            MEMLIB_DEBUG("Cannot compute RVA for address {} because it is below the module base 0x{:x}.", ptr(), mod->base);
             return std::nullopt;
         }
 
         const size_t rva = m_value - base;
         if (rva >= mod->size)
         {
-            const auto dbgbase = address(mod->base);
-            const auto end = dbgbase + mod->size;
-            MEMLIB_DEBUG("Cannot compute RVA for address {} because it is outside the module range [{}, {}).", ptr(), dbgbase, end);
+            MEMLIB_DEBUG("Cannot compute RVA for address {} because it is outside the module range [0x{:x}, 0x{:x}).", ptr(), mod->base, (mod->base + mod->size));
             return std::nullopt;
         }
 
