@@ -177,10 +177,12 @@ namespace memlib
             if (!res) return {};
 
             auto entry = std::make_shared<hook_entry>(std::move(res.value()));
-            entry->enable_hook();
 
-            std::scoped_lock lk(m_mutex);
-            m_hooks.emplace_back(entry);
+            {
+                std::scoped_lock lk(m_mutex);
+                m_hooks.emplace_back(entry);
+            }
+
             return entry;
         }
 
