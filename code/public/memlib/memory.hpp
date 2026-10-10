@@ -41,6 +41,18 @@ namespace memlib
     [[nodiscard]] address find(const scan_pattern& pattern, uintptr_t start, uintptr_t end, int32_t offset = 0x0000) noexcept;
     [[nodiscard]] address find(const char* combo, uintptr_t start, uintptr_t end, int32_t offset = 0x0000) noexcept;
 
+    // Find a pattern and resolve its E8 call or E9 jump at the given offset.
+    [[nodiscard]] address find_xref(const scan_pattern& pattern, uintptr_t start, uintptr_t end, int32_t offset = 0) noexcept;
+    [[nodiscard]] address find_xref(const char* combo, uintptr_t start, uintptr_t end, int32_t offset = 0) noexcept;
+
+    // Return the first successfully resolved pattern, in the supplied order.
+    [[nodiscard]] address find_xrefs(std::span<const char* const> patterns, uintptr_t start, uintptr_t end, int32_t offset = 0) noexcept;
+
+    // Return the target if at least half of all supplied patterns point to it.
+    // For example, 3 out of 5 patterns must agree; the other 2 can fail.
+    // If half point to one target and half to another, return no result.
+    [[nodiscard]] address find_xrefs_secure(std::span<const char* const> patterns, uintptr_t start, uintptr_t end, int32_t offset = 0) noexcept;
+
     [[nodiscard]] std::vector<address> find_all(const scan_pattern& pattern, uintptr_t start, uintptr_t end, scan_callback scan_cb = nullptr) noexcept;
     [[nodiscard]] std::vector<address> find_all(const char* combo, uintptr_t start, uintptr_t end, scan_callback scan_cb = nullptr) noexcept;
 }

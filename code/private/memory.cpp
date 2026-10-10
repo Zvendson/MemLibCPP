@@ -9,6 +9,7 @@
 #include <cstring>
 #include <cstddef>
 #include <cinttypes>
+#include <new>
 
 #if MEMLIB_IS_WINDOWS
 #ifndef NOMINMAX
@@ -271,6 +272,115 @@ namespace memlib
     }
 
 
+
+    address find_xref(const scan_pattern& pattern, uintptr_t start, uintptr_t end, int32_t offset) noexcept
+    {
+        const auto lower = std::min(start, end);
+        const auto upper = std::max(start, end);
+        if (lower == 0 || upper - lower < 5)
+        {
+            return {};
+        }
+
+        const auto match = find(pattern, start, end, offset);
+        if (!match || match.value() < lower || match.value() > upper - 5)
+        {
+            return {};
+        }
+
+        const auto instruction = match.try_read<std::array<uint8_t, 5>>();
+        if (!instruction || ((*instruction)[0] != 0xE8 && (*instruction)[0] != 0xE9))
+        {
+            return {};
+        }
+
+        int32_t displacement{};
+        std::memcpy(&displacement, instruction->data() + 1, sizeof(displacement));
+        return match.resolve_relative(displacement, 5);
+    }
+
+    address find_xref(const char* combo, uintptr_t start, uintptr_t end, int32_t offset) noexcept
+    {
+        scan_pattern pattern{};
+        if (!parse_combo_pattern(combo, pattern))
+        {
+            return {};
+        }
+        return find_xref(pattern, start, end, offset);
+    }
+
+    address find_xrefs(std::span<const char* const> patterns, uintptr_t start, uintptr_t end, int32_t offset) noexcept
+    {
+        for (const auto* pattern : patterns)
+        {
+            if (const auto target = find_xref(pattern, start, end, offset))
+            {
+                return target;
+            }
+        }
+        return {};
+    }
+
+    address find_xrefs_secure(std::span<const char* const> patterns, uintptr_t start, uintptr_t end, int32_t offset) noexcept
+    {
+        if (patterns.empty())
+        {
+            return {};
+        }
+
+        struct vote
+        {
+            address target;
+            size_t count;
+        };
+
+        try
+        {
+            std::vector<vote> votes;
+            votes.reserve(patterns.size());
+            for (const auto* pattern : patterns)
+            {
+                const auto target = find_xref(pattern, start, end, offset);
+                if (!target)
+                {
+                    continue;
+                }
+
+                const auto existing = std::find_if(votes.begin(), votes.end(), [target](const vote& value)
+                {
+                    return value.target == target;
+                });
+                if (existing == votes.end())
+                {
+                    votes.push_back({target, 1});
+                }
+                else
+                {
+                    ++existing->count;
+                }
+            }
+
+            const auto required = patterns.size() / 2 + patterns.size() % 2;
+            address result;
+            for (const auto& value : votes)
+            {
+                if (value.count < required)
+                {
+                    continue;
+                }
+                if (result)
+                {
+                    return {};
+                }
+                result = value.target;
+            }
+            return result;
+        }
+        catch (const std::bad_alloc&)
+        {
+            return {};
+        }
+    }
 
     std::vector<address> find_all(const scan_pattern& pattern, uintptr_t start, uintptr_t end, scan_callback scan_cb) noexcept
     {
