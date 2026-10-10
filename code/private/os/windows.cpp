@@ -339,8 +339,11 @@ namespace memlib
                 std::memcpy(name, sec[i].Name, 8);
 
                 s.name  = name;
+                s.type = get_section_from_name(sec[i].Name);
+                s.module = reinterpret_cast<HMODULE>(base);
                 s.start = start;
                 s.size  = sz;
+                s.size_padded = sz;
 
                 prot pr = prot::none;
                 if (sec[i].Characteristics & IMAGE_SCN_MEM_READ)    pr = pr | prot::r;

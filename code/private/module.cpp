@@ -125,7 +125,7 @@ namespace memlib
             uintptr_t section_start = module_base + va;
             size_t    section_size = std::min<size_t>(vlen, image_size - va);
 
-            m_sections[uint8_t(secid)] = { section_name, secid, section_start, section_size, section_size /* todo: size_padded */, pr };
+            m_sections[uint8_t(secid)] = { section_name, secid, section_start, section_size, section_size /* todo: size_padded */, pr, m_handle };
             MEMLIB_DEBUG(
                 "[Scanner] Found section \"{}\" at 0x{:x} and size 0x{:X} ({}{}{}).",
                 section_name,
