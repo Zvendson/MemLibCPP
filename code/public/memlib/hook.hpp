@@ -33,14 +33,13 @@ namespace memlib
     class hook_entry
     { // NOTE: Wrapper for safetyhook, in case i decide to change the backend (safetyhook).
     public:
-        explicit hook_entry(inl_hook&& in) : m_hook(std::move(in)) {}
+        explicit hook_entry(inl_hook&& in) : m_hook(std::move(in)), m_enabled(m_hook.enabled()) {}
 
         inline void enable_hook()
         {
             if (!m_enabled)
             {
-                (void)m_hook.enable();
-                m_enabled = true;
+                if (m_hook.enable()) m_enabled = true;
             }
         }
 
@@ -48,8 +47,7 @@ namespace memlib
         {
             if (m_enabled)
             {
-                (void)m_hook.disable();
-                m_enabled = false;
+                if (m_hook.disable()) m_enabled = false;
             }
         }
 
@@ -194,7 +192,7 @@ namespace memlib
             {
                 if (auto& sp = *it)
                 {
-                    sp->enable_hook();
+                    sp->disable_hook();
                     ++it;
                 }
                 else
