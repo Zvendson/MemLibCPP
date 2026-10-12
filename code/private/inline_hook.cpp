@@ -132,7 +132,8 @@ extern "C"
     }
     memlib_hook_status memlib_inline_hook_reset(memlib_inline_hook* hook)
     {
-        if (!hook || !hook->state) return MEMLIB_HOOK_OK;
+        if (!hook) return MEMLIB_HOOK_INVALID_HOOK;
+        if (!hook->state) return MEMLIB_HOOK_OK;
         std::scoped_lock lock(lifecycle_mutex());
         const auto result = toggle(*hook->state, false);
         if (!result) return to_c_status(result.error().type);
