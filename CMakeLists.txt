@@ -29,6 +29,7 @@ set(MEMLIB_PUBLIC_HEADERS
     code/public/memlib/module.hpp
     code/public/memlib/memory.hpp
     code/public/memlib/hook.h
+    code/public/memlib/c_api.h
     code/public/memlib/hook.hpp
     code/public/memlib/inline_hook.hpp
     code/public/memlib/thread.hpp
@@ -40,6 +41,7 @@ set(MEMLIB_PRIVATE_SOURCES
     code/private/hook.cpp
     code/private/hook_internal.hpp
     code/private/inline_hook.cpp
+    code/private/c_api.cpp
     code/private/memlib.cpp
     code/private/memory.cpp
     code/private/module.cpp

@@ -2,6 +2,20 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifndef MEMLIB_API
+#if defined(MEMLIB_EXPORTS)
+#if defined(_WIN32) || defined(_WIN64)
+#define MEMLIB_API __declspec(dllexport)
+#elif defined(__GNUC__) || defined(__clang__)
+#define MEMLIB_API __attribute__((visibility("default")))
+#else
+#define MEMLIB_API
+#endif
+#else
+#define MEMLIB_API
+#endif
+#endif
+
 #if defined(_MSC_VER) && defined(_M_IX86)
 #define MEMLIB_CDECL __cdecl
 #define MEMLIB_STDCALL __stdcall
@@ -36,20 +50,20 @@ typedef struct memlib_inline_hook memlib_inline_hook;
 typedef struct memlib_mid_hook memlib_mid_hook;
 typedef struct memlib_hook_allocation { void* address; size_t size; } memlib_hook_allocation;
 
-memlib_hook_status memlib_inline_hook_create(void*, void*, uint32_t, memlib_inline_hook**);
-memlib_hook_status memlib_inline_hook_enable(memlib_inline_hook*);
-memlib_hook_status memlib_inline_hook_disable(memlib_inline_hook*);
-memlib_hook_status memlib_inline_hook_reset(memlib_inline_hook*);
-int memlib_inline_hook_enabled(const memlib_inline_hook*);
-void* memlib_inline_hook_target(const memlib_inline_hook*);
-void* memlib_inline_hook_destination(const memlib_inline_hook*);
-memlib_hook_status memlib_inline_hook_trampoline(const memlib_inline_hook*, memlib_hook_allocation*);
+MEMLIB_API memlib_hook_status memlib_inline_hook_create(void*, void*, uint32_t, memlib_inline_hook**);
+MEMLIB_API memlib_hook_status memlib_inline_hook_enable(memlib_inline_hook*);
+MEMLIB_API memlib_hook_status memlib_inline_hook_disable(memlib_inline_hook*);
+MEMLIB_API memlib_hook_status memlib_inline_hook_reset(memlib_inline_hook*);
+MEMLIB_API int memlib_inline_hook_enabled(const memlib_inline_hook*);
+MEMLIB_API void* memlib_inline_hook_target(const memlib_inline_hook*);
+MEMLIB_API void* memlib_inline_hook_destination(const memlib_inline_hook*);
+MEMLIB_API memlib_hook_status memlib_inline_hook_trampoline(const memlib_inline_hook*, memlib_hook_allocation*);
 
-memlib_hook_status memlib_mid_hook_create(void* address, void* destination, uint32_t flags, memlib_mid_hook** out_hook);
-memlib_hook_status memlib_mid_hook_enable(memlib_mid_hook*);
-memlib_hook_status memlib_mid_hook_disable(memlib_mid_hook*);
-memlib_hook_status memlib_mid_hook_reset(memlib_mid_hook*);
-int memlib_mid_hook_enabled(const memlib_mid_hook*);
+MEMLIB_API memlib_hook_status memlib_mid_hook_create(void* address, void* destination, uint32_t flags, memlib_mid_hook** out_hook);
+MEMLIB_API memlib_hook_status memlib_mid_hook_enable(memlib_mid_hook*);
+MEMLIB_API memlib_hook_status memlib_mid_hook_disable(memlib_mid_hook*);
+MEMLIB_API memlib_hook_status memlib_mid_hook_reset(memlib_mid_hook*);
+MEMLIB_API int memlib_mid_hook_enabled(const memlib_mid_hook*);
 #ifdef __cplusplus
 }
 #endif

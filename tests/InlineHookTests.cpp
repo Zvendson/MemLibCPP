@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <memlib/hook.h>
+#include <memlib/c_api.h>
 #include <memlib/inline_hook.hpp>
 #include <memlib/memory.hpp>
 
@@ -142,5 +143,26 @@ namespace
         memlib::inl_hook hook;
         EXPECT_EQ(memlib::inl_hook::create(nullptr, reinterpret_cast<void*>(&detour_value), memlib::inl_hook::Default, &hook), memlib::hook_status::invalid_target);
         EXPECT_EQ(hook.reset(), memlib::hook_status::ok);
+    }
+
+    TEST(MemLibCApi, ExposesMemoryAndPatternOperations)
+    {
+        auto* memory = static_cast<std::uint8_t*>(memlib_alloc(64, static_cast<uint32_t>(memlib::prot::r | memlib::prot::w | memlib::prot::x)));
+        ASSERT_NE(memory, nullptr);
+        const std::uint8_t bytes[] = {0x90, 0xB8, 0x2A, 0x00, 0x00, 0x00, 0xC3};
+        std::memcpy(memory, bytes, sizeof(bytes));
+        memlib_flush_icache(memory, sizeof(bytes));
+
+        memlib_region_info region{};
+        EXPECT_EQ(memlib_query(memory, &region), 1);
+        EXPECT_EQ(region.start, reinterpret_cast<uintptr_t>(memory));
+        EXPECT_EQ(memlib_is_readable(memory, sizeof(bytes)), 1);
+        EXPECT_EQ(memlib_is_executable(memory, sizeof(bytes)), 1);
+
+        memlib_scan_pattern pattern{};
+        ASSERT_EQ(memlib_parse_pattern("B8 2A 00 00 00", &pattern), 1);
+        EXPECT_EQ(memlib_find(&pattern, reinterpret_cast<uintptr_t>(memory), reinterpret_cast<uintptr_t>(memory + sizeof(bytes)), 0), reinterpret_cast<uintptr_t>(memory + 1));
+        EXPECT_EQ(memlib_address_resolve_relative(reinterpret_cast<uintptr_t>(memory), 4, 5), reinterpret_cast<uintptr_t>(memory + 9));
+        EXPECT_EQ(memlib_free(memory), 1);
     }
 }
