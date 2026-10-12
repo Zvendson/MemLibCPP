@@ -88,7 +88,7 @@ extern "C"
 {
     int memlib_query(void* address, memlib_region_info* out)
     {
-        if (!out) return 0;
+        if (!address || !out) return 0;
         const auto result = memlib::query(address);
         if (!result) return 0;
         copy_region(*result, *out);
@@ -159,7 +159,7 @@ extern "C"
 
     size_t memlib_find_all(const memlib_scan_pattern* pattern, uintptr_t start, uintptr_t end, uintptr_t* output, size_t capacity)
     {
-        if (!pattern) return 0;
+        if (!pattern || (capacity != 0 && !output)) return 0;
         const auto values = memlib::find_all(to_cpp_pattern(*pattern), start, end);
         const auto count = std::min(values.size(), capacity);
         for (size_t i = 0; i < count; ++i) output[i] = values[i].value();
@@ -167,7 +167,7 @@ extern "C"
     }
     size_t memlib_find_all_combo(const char* pattern, uintptr_t start, uintptr_t end, uintptr_t* output, size_t capacity)
     {
-        if (!pattern) return 0;
+        if (!pattern || (capacity != 0 && !output)) return 0;
         const auto values = memlib::find_all(pattern, start, end);
         const auto count = std::min(values.size(), capacity);
         for (size_t i = 0; i < count; ++i) output[i] = values[i].value();
@@ -261,7 +261,7 @@ extern "C"
 
     size_t memlib_module_find_all(const memlib_module* module, const char* pattern, int section_value, uintptr_t* output, size_t capacity)
     {
-        if (!module || !pattern || section_value < 0 || section_value >= static_cast<int>(memlib::section::max)) return 0;
+        if (!module || !pattern || (capacity != 0 && !output) || section_value < 0 || section_value >= static_cast<int>(memlib::section::max)) return 0;
         const auto values = module->value.find_all(pattern, static_cast<memlib::section>(section_value));
         const auto count = std::min(values.size(), capacity);
         for (size_t i = 0; i < count; ++i) output[i] = values[i].value();

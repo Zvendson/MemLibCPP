@@ -165,4 +165,84 @@ namespace
         EXPECT_EQ(memlib_address_resolve_relative(reinterpret_cast<uintptr_t>(memory), 4, 5), reinterpret_cast<uintptr_t>(memory + 9));
         EXPECT_EQ(memlib_free(memory), 1);
     }
+
+    TEST(MemLibCApi, RejectsNullAndInvalidArguments)
+    {
+        memlib_region_info region{};
+        memlib_module_info module_info{};
+        memlib_scan_pattern pattern{};
+        EXPECT_EQ(memlib_query(nullptr, &region), 0);
+        EXPECT_EQ(memlib_query(nullptr, nullptr), 0);
+        EXPECT_EQ(memlib_parse_pattern(nullptr, &pattern), 0);
+        EXPECT_EQ(memlib_parse_pattern("not a pattern", &pattern), 0);
+        EXPECT_EQ(memlib_parse_pattern("90", nullptr), 0);
+        EXPECT_EQ(memlib_find(nullptr, 1, 2, 0), 0u);
+        EXPECT_EQ(memlib_find_combo(nullptr, 1, 2, 0), 0u);
+        EXPECT_EQ(memlib_find_all(nullptr, 1, 2, nullptr, 0), 0u);
+        EXPECT_EQ(memlib_find_all_combo("90", 1, 2, nullptr, 1), 0u);
+        EXPECT_EQ(memlib_read(nullptr, &region, sizeof(region)), 0);
+        EXPECT_EQ(memlib_write(nullptr, &region, sizeof(region)), 0);
+        EXPECT_EQ(memlib_read(&region, nullptr, sizeof(region)), 0);
+        EXPECT_EQ(memlib_write(&region, nullptr, sizeof(region)), 0);
+        EXPECT_EQ(memlib_address_valid(0), 0);
+        EXPECT_EQ(memlib_address_region(0, &region), 0);
+        EXPECT_EQ(memlib_address_section(0, nullptr), 0);
+        EXPECT_EQ(memlib_address_module(0, &module_info), 0);
+        EXPECT_EQ(memlib_module_valid(nullptr), 0);
+        EXPECT_EQ(memlib_module_base(nullptr), 0u);
+        EXPECT_EQ(memlib_module_size(nullptr), 0u);
+        EXPECT_EQ(memlib_module_get_info(nullptr, nullptr), 0);
+        EXPECT_EQ(memlib_module_section(nullptr, 0, nullptr), 0);
+        EXPECT_EQ(memlib_module_contains(nullptr, 0, -1), 0);
+        EXPECT_EQ(memlib_module_find(nullptr, "90", 0, 0), 0u);
+        EXPECT_EQ(memlib_module_find_all(nullptr, "90", 0, nullptr, 0), 0u);
+    }
+
+    TEST(MemLibCApi, ProtectsMemoryAndReportsOldProtection)
+    {
+        constexpr auto read_write = static_cast<uint32_t>(memlib::prot::r | memlib::prot::w);
+        auto* memory = static_cast<std::uint8_t*>(memlib_alloc(64, read_write));
+        ASSERT_NE(memory, nullptr);
+        const std::uint32_t value = 0x12345678;
+        std::uint32_t read_back = 0;
+        EXPECT_EQ(memlib_write(memory, &value, sizeof(value)), 1);
+        EXPECT_EQ(memlib_read(memory, &read_back, sizeof(read_back)), 1);
+        EXPECT_EQ(read_back, value);
+
+        uint32_t old_protection = 0;
+        ASSERT_EQ(memlib_protect(memory, 64, static_cast<uint32_t>(memlib::prot::r), &old_protection), 1);
+        EXPECT_EQ(memlib_write(memory, &value, sizeof(value)), 0);
+        EXPECT_EQ(memlib_protect(memory, 64, read_write, nullptr), 1);
+        EXPECT_EQ(memlib_free(memory), 1);
+    }
+
+    TEST(MemLibCApi, TruncatesFindResultsWithoutWritingPastCapacity)
+    {
+        auto* memory = static_cast<std::uint8_t*>(memlib_alloc(64, static_cast<uint32_t>(memlib::prot::r | memlib::prot::w)));
+        ASSERT_NE(memory, nullptr);
+        std::memset(memory, 0x90, 64);
+        memlib_scan_pattern pattern{};
+        ASSERT_EQ(memlib_parse_pattern("90", &pattern), 1);
+        uintptr_t result = 0;
+        EXPECT_EQ(memlib_find_all(&pattern, reinterpret_cast<uintptr_t>(memory), reinterpret_cast<uintptr_t>(memory + 64), &result, 1), 1u);
+        EXPECT_EQ(result, reinterpret_cast<uintptr_t>(memory));
+        EXPECT_EQ(memlib_find_all(&pattern, reinterpret_cast<uintptr_t>(memory), reinterpret_cast<uintptr_t>(memory + 64), nullptr, 0), 1u);
+        EXPECT_EQ(memlib_find_all(&pattern, reinterpret_cast<uintptr_t>(memory), reinterpret_cast<uintptr_t>(memory + 64), nullptr, 1), 0u);
+        EXPECT_EQ(memlib_free(memory), 1);
+    }
+
+    TEST(MemLibCApi, OpensAndClosesTheCurrentModule)
+    {
+        auto* module = memlib_module_open(nullptr);
+        ASSERT_NE(module, nullptr);
+        EXPECT_EQ(memlib_module_valid(module), 1);
+        EXPECT_NE(memlib_module_base(module), 0u);
+        EXPECT_GT(memlib_module_size(module), 0u);
+        memlib_module_info info{};
+        EXPECT_EQ(memlib_module_get_info(module, &info), 1);
+        EXPECT_NE(info.base, 0u);
+        EXPECT_NE(info.name[0], '\0');
+        EXPECT_EQ(memlib_module_contains(module, info.base + 1, -1), 1);
+        memlib_module_close(module);
+    }
 }
