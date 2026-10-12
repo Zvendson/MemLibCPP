@@ -28,6 +28,7 @@ set(MEMLIB_PUBLIC_HEADERS
     code/public/memlib/address.hpp
     code/public/memlib/module.hpp
     code/public/memlib/memory.hpp
+    code/public/memlib/hook.h
     code/public/memlib/hook.hpp
     code/public/memlib/inline_hook.hpp
     code/public/memlib/thread.hpp

@@ -7,6 +7,7 @@
 #include <cstring>
 #include <limits>
 #include <mutex>
+#include <new>
 
 #if !defined(_M_IX86) && !defined(_M_X64) && !defined(__i386__) && !defined(__x86_64__)
 #error "MemLib inline hooks support x86 and x64 only"
@@ -14,8 +15,9 @@
 
 namespace memlib
 {
-    struct inl_hook::state
+    struct hook_state
     {
+        struct allocation { uint8_t* data{}; size_t length{}; explicit operator bool() const noexcept { return data != nullptr; } };
         uint8_t* target{};
         uint8_t* destination{};
         uint8_t* patch_target{};
@@ -27,7 +29,7 @@ namespace memlib
         size_t boundary_count{};
         std::atomic<bool> enabled{};
         bool ever_enabled{};
-        ~state()
+        ~hook_state()
         {
             // A suspended thread can be inside a callee with a return address
             // in the trampoline. Keep published code mapped until process exit.
@@ -39,12 +41,192 @@ namespace memlib
 namespace
 {
     using memlib::hook_error;
+    using memlib::hook_state;
+    std::mutex& lifecycle_mutex();
+    std::vector<hook_state*>& hooks();
+    std::expected<void, hook_error> prepare(hook_state&);
+    std::expected<void, hook_error> toggle(hook_state&, bool);
+    memlib_hook_status to_c_status(hook_error::Type);
+    memlib_hook_status result_status(const std::expected<void, hook_error>&);
+}
+
+struct memlib_inline_hook
+{
+    memlib::hook_state* state{};
+};
+
+struct memlib_mid_hook
+{
+    memlib_inline_hook* inner{};
+};
+
+namespace
+{
+    memlib_hook_status create_inline_state(void* target, void* destination, uint32_t flags, memlib_inline_hook* handle)
+    {
+        if (!handle) return MEMLIB_HOOK_INVALID_HOOK;
+        std::scoped_lock lock(lifecycle_mutex());
+        if (!target) return MEMLIB_HOOK_INVALID_TARGET;
+        if (!destination || target == destination) return MEMLIB_HOOK_INVALID_DESTINATION;
+        auto* state = new (std::nothrow) memlib::hook_state;
+        if (!state) return MEMLIB_HOOK_ALLOCATION_FAILED;
+        state->target = static_cast<uint8_t*>(target);
+        state->destination = static_cast<uint8_t*>(destination);
+        for (const auto* existing : hooks())
+        {
+            const auto address = reinterpret_cast<uintptr_t>(target);
+            const auto begin = reinterpret_cast<uintptr_t>(existing->patch_target);
+            if (existing->target == target || (address >= begin && address < begin + existing->saved.size()))
+            { delete state; return MEMLIB_HOOK_ALREADY_HOOKED; }
+        }
+        if (auto prepared = prepare(*state); !prepared)
+        { const auto status = to_c_status(prepared.error().type); delete state; return status; }
+        const auto begin = reinterpret_cast<uintptr_t>(state->patch_target);
+        for (const auto* existing : hooks())
+        {
+            const auto other = reinterpret_cast<uintptr_t>(existing->patch_target);
+            if (begin < other + existing->saved.size() && other < begin + state->saved.size())
+            { delete state; return MEMLIB_HOOK_ALREADY_HOOKED; }
+        }
+        hooks().push_back(state);
+        handle->state = state;
+        if ((flags & MEMLIB_HOOK_START_DISABLED) == 0)
+        {
+            const auto result = toggle(*state, true);
+            if (!result)
+            {
+                const auto status = to_c_status(result.error().type);
+                if (state->enabled.load()) return status;
+                std::erase(hooks(), state); handle->state = nullptr; delete state; return status;
+            }
+        }
+        return MEMLIB_HOOK_OK;
+    }
+}
+
+extern "C"
+{
+    memlib_hook_status memlib_inline_hook_create(void* target, void* destination, uint32_t flags, memlib_inline_hook** out_hook)
+    {
+        if (out_hook) *out_hook = nullptr;
+        if (!out_hook) return MEMLIB_HOOK_INVALID_HOOK;
+        auto* handle = new (std::nothrow) memlib_inline_hook;
+        if (!handle) return MEMLIB_HOOK_ALLOCATION_FAILED;
+        const auto result = create_inline_state(target, destination, flags, handle);
+        if (result != MEMLIB_HOOK_OK && !handle->state) delete handle;
+        else *out_hook = handle;
+        return result;
+    }
+
+    memlib_hook_status memlib_inline_hook_enable(memlib_inline_hook* hook)
+    {
+        if (!hook || !hook->state) return MEMLIB_HOOK_INVALID_HOOK;
+        std::scoped_lock lock(lifecycle_mutex());
+        return result_status(toggle(*hook->state, true));
+    }
+    memlib_hook_status memlib_inline_hook_disable(memlib_inline_hook* hook)
+    {
+        if (!hook || !hook->state) return MEMLIB_HOOK_INVALID_HOOK;
+        std::scoped_lock lock(lifecycle_mutex());
+        return result_status(toggle(*hook->state, false));
+    }
+    memlib_hook_status memlib_inline_hook_reset(memlib_inline_hook* hook)
+    {
+        if (!hook || !hook->state) return MEMLIB_HOOK_OK;
+        std::scoped_lock lock(lifecycle_mutex());
+        const auto result = toggle(*hook->state, false);
+        if (!result) return to_c_status(result.error().type);
+        std::erase(hooks(), hook->state);
+        delete hook->state;
+        hook->state = nullptr;
+        delete hook;
+        return MEMLIB_HOOK_OK;
+    }
+    int memlib_inline_hook_enabled(const memlib_inline_hook* hook)
+    { return hook && hook->state && hook->state->enabled.load() ? 1 : 0; }
+    void* memlib_inline_hook_target(const memlib_inline_hook* hook)
+    { return hook && hook->state ? hook->state->target : nullptr; }
+    void* memlib_inline_hook_destination(const memlib_inline_hook* hook)
+    { return hook && hook->state ? hook->state->destination : nullptr; }
+    memlib_hook_status memlib_inline_hook_trampoline(const memlib_inline_hook* hook, memlib_hook_allocation* out)
+    {
+        if (!hook || !hook->state || !out) return MEMLIB_HOOK_INVALID_HOOK;
+        out->address = hook->state->trampoline.data; out->size = hook->state->trampoline.length;
+        return MEMLIB_HOOK_OK;
+    }
+
+    memlib_hook_status memlib_mid_hook_create(void* address, void* destination, uint32_t flags, memlib_mid_hook** out_hook)
+    {
+        if (out_hook) *out_hook = nullptr;
+        if (!out_hook) return MEMLIB_HOOK_INVALID_HOOK;
+        auto* handle = new (std::nothrow) memlib_mid_hook;
+        if (!handle) return MEMLIB_HOOK_ALLOCATION_FAILED;
+        const auto status = memlib_inline_hook_create(address, destination, flags, &handle->inner);
+        if (status != MEMLIB_HOOK_OK)
+        {
+            delete handle;
+            return status;
+        }
+        *out_hook = handle;
+        return MEMLIB_HOOK_OK;
+    }
+    memlib_hook_status memlib_mid_hook_enable(memlib_mid_hook* hook)
+    { return hook ? memlib_inline_hook_enable(hook->inner) : MEMLIB_HOOK_INVALID_HOOK; }
+    memlib_hook_status memlib_mid_hook_disable(memlib_mid_hook* hook)
+    { return hook ? memlib_inline_hook_disable(hook->inner) : MEMLIB_HOOK_INVALID_HOOK; }
+    memlib_hook_status memlib_mid_hook_reset(memlib_mid_hook* hook)
+    {
+        if (!hook) return MEMLIB_HOOK_INVALID_HOOK;
+        const auto status = memlib_inline_hook_reset(hook->inner);
+        if (status == MEMLIB_HOOK_OK) delete hook;
+        return status;
+    }
+    int memlib_mid_hook_enabled(const memlib_mid_hook* hook)
+    { return hook ? memlib_inline_hook_enabled(hook->inner) : 0; }
+}
+
+namespace
+{
+    using memlib::hook_error;
+    using memlib::hook_state;
+    std::mutex& lifecycle_mutex();
+    std::vector<hook_state*>& hooks();
+    std::expected<void, hook_error> prepare(hook_state&);
+    std::expected<void, hook_error> toggle(hook_state&, bool);
+    memlib_hook_status to_c_status(hook_error::Type);
+    memlib_hook_status result_status(const std::expected<void, hook_error>&);
     constexpr bool x64 = sizeof(uintptr_t) == 8;
     // Intentionally process-lifetime storage: DLL static destruction order must
     // not invalidate bookkeeping while a hook is still installed.
     std::mutex& lifecycle_mutex() { static auto* value = new std::mutex; return *value; }
-    std::vector<memlib::inl_hook::state*>& hooks()
-    { static auto* value = new std::vector<memlib::inl_hook::state*>; return *value; }
+    std::vector<hook_state*>& hooks()
+    { static auto* value = new std::vector<hook_state*>; return *value; }
+
+    memlib_hook_status to_c_status(hook_error::Type type)
+    {
+        using T = hook_error::Type;
+        switch (type)
+        {
+        case T::InvalidTarget: return MEMLIB_HOOK_INVALID_TARGET;
+        case T::InvalidDestination: return MEMLIB_HOOK_INVALID_DESTINATION;
+        case T::DecodeFailed: return MEMLIB_HOOK_DECODE_FAILED;
+        case T::UnsupportedInstruction: return MEMLIB_HOOK_UNSUPPORTED_INSTRUCTION;
+        case T::AllocationFailed: return MEMLIB_HOOK_ALLOCATION_FAILED;
+        case T::RelocationOutOfRange: return MEMLIB_HOOK_RELOCATION_OUT_OF_RANGE;
+        case T::InvalidBranchTarget: return MEMLIB_HOOK_INVALID_BRANCH_TARGET;
+        case T::AlreadyHooked: return MEMLIB_HOOK_ALREADY_HOOKED;
+        case T::ProtectionFailed: return MEMLIB_HOOK_PROTECTION_FAILED;
+        case T::ThreadFreezeFailed: return MEMLIB_HOOK_THREAD_FREEZE_FAILED;
+        case T::ThreadContextFailed: return MEMLIB_HOOK_THREAD_CONTEXT_FAILED;
+        case T::TargetChanged: return MEMLIB_HOOK_TARGET_CHANGED;
+        case T::InvalidHook: return MEMLIB_HOOK_INVALID_HOOK;
+        case T::ProtectionRestoreFailed: return MEMLIB_HOOK_PROTECTION_RESTORE_FAILED;
+        }
+        return MEMLIB_HOOK_UNSUPPORTED;
+    }
+
+    memlib_hook_status result_status(const std::expected<void, hook_error>& result)
+    { return result ? MEMLIB_HOOK_OK : to_c_status(result.error().type); }
 
     bool rel32(uintptr_t from, uintptr_t to, int32_t& result)
     {
@@ -91,7 +273,7 @@ namespace
         uint8_t pc_register{};
     };
 
-    std::expected<void, hook_error> prepare(memlib::inl_hook::state& state)
+    std::expected<void, hook_error> prepare(hook_state& state)
     {
         using enum hook_error::Type;
         const auto target = reinterpret_cast<uintptr_t>(state.target);
@@ -307,7 +489,7 @@ namespace
         return {};
     }
 
-    std::expected<void, hook_error> toggle(memlib::inl_hook::state& state, bool enabling)
+    std::expected<void, hook_error> toggle(hook_state& state, bool enabling)
     {
         if (auto recovered = memlib::detail::recover_protections(state.pending); !recovered) return recovered;
         if (state.enabled.load() == enabling) return {};
@@ -323,105 +505,3 @@ namespace
     }
 }
 
-namespace memlib
-{
-    inl_hook::inl_hook() noexcept = default;
-    inl_hook::~inl_hook()
-    {
-        // If restoring the target failed, keep the owner/registry alive. Freeing
-        // it would leave an installed jump pointing to destroyed storage.
-        if (auto result = reset(); !result) (void)m_state.release();
-    }
-    inl_hook::inl_hook(inl_hook&& other) noexcept = default;
-    inl_hook& inl_hook::operator=(inl_hook&& other) noexcept
-    {
-        if (this == &other) return *this;
-        if (reset()) m_state = std::move(other.m_state);
-        return *this;
-    }
-    std::expected<inl_hook, inl_hook::Error> inl_hook::create(void* target, void* destination, Flags flags)
-    {
-        inl_hook result;
-        std::scoped_lock lock(lifecycle_mutex());
-        if (!target) return std::unexpected(Error{Error::InvalidTarget, 0});
-        if (!destination || target == destination) return std::unexpected(Error{Error::InvalidDestination, reinterpret_cast<uintptr_t>(destination)});
-        result.m_state = std::make_unique<state>();
-        auto& state = *result.m_state;
-        state.target = static_cast<uint8_t*>(target);
-        state.destination = static_cast<uint8_t*>(destination);
-        // Check exact duplicates before decoding an already-installed jump.
-        for (const auto* existing : hooks())
-            if (existing->target == target || (reinterpret_cast<uintptr_t>(target) >= reinterpret_cast<uintptr_t>(existing->patch_target) &&
-                reinterpret_cast<uintptr_t>(target) < reinterpret_cast<uintptr_t>(existing->patch_target) + existing->saved.size()))
-            {
-                result.m_state.reset();
-                return std::unexpected(Error{Error::AlreadyHooked, reinterpret_cast<uintptr_t>(target)});
-            }
-        if (auto prepared = prepare(state); !prepared)
-        {
-            const auto error = prepared.error();
-            result.m_state.reset();
-            return std::unexpected(error);
-        }
-        const auto begin = reinterpret_cast<uintptr_t>(state.patch_target);
-        for (const auto* existing : hooks())
-        {
-            const auto other = reinterpret_cast<uintptr_t>(existing->patch_target);
-            if (begin < other + existing->saved.size() && other < begin + state.saved.size())
-            {
-                result.m_state.reset();
-                return std::unexpected(Error{Error::AlreadyHooked, begin});
-            }
-        }
-        hooks().push_back(&state);
-        if (!(flags & StartDisabled))
-        {
-            if (auto enabled = toggle(state, true); !enabled)
-            {
-                auto error = enabled.error();
-                if (!toggle(state, false))
-                {
-                    error.patch_applied = state.enabled.load();
-                    (void)result.m_state.release();
-                    return std::unexpected(error);
-                }
-                error.patch_applied = false;
-                std::erase(hooks(), &state);
-                result.m_state.reset();
-                return std::unexpected(error);
-            }
-        }
-        return result;
-    }
-    std::expected<void, inl_hook::Error> inl_hook::enable()
-    {
-        std::scoped_lock lock(lifecycle_mutex());
-        if (!m_state) return std::unexpected(Error{Error::InvalidHook, 0});
-        return toggle(*m_state, true);
-    }
-    std::expected<void, inl_hook::Error> inl_hook::disable()
-    {
-        std::scoped_lock lock(lifecycle_mutex());
-        if (!m_state) return std::unexpected(Error{Error::InvalidHook, 0});
-        return toggle(*m_state, false);
-    }
-    std::expected<void, inl_hook::Error> inl_hook::reset()
-    {
-        if (!m_state) return {};
-        std::scoped_lock lock(lifecycle_mutex());
-        if (auto result = toggle(*m_state, false); !result) return result;
-        std::erase(hooks(), m_state.get());
-        m_state.reset();
-        return {};
-    }
-    bool inl_hook::enabled() const noexcept { return m_state && m_state->enabled.load(); }
-    inl_hook::operator bool() const noexcept { return m_state != nullptr; }
-    uint8_t* inl_hook::target() const noexcept { return m_state ? m_state->target : nullptr; }
-    uintptr_t inl_hook::target_address() const noexcept { return reinterpret_cast<uintptr_t>(target()); }
-    uint8_t* inl_hook::destination() const noexcept { return m_state ? m_state->destination : nullptr; }
-    uintptr_t inl_hook::destination_address() const noexcept { return reinterpret_cast<uintptr_t>(destination()); }
-    const inl_hook::allocation& inl_hook::trampoline() const noexcept
-    { static const allocation empty; return m_state ? m_state->trampoline : empty; }
-    const std::vector<uint8_t>& inl_hook::original_bytes() const noexcept
-    { static const std::vector<uint8_t> empty; return m_state ? m_state->saved : empty; }
-}

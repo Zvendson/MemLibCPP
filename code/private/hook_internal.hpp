@@ -1,7 +1,24 @@
 #pragma once
 #include <memlib/inline_hook.hpp>
+#include <expected>
 #include <array>
 #include <atomic>
+
+namespace memlib
+{
+    struct hook_error
+    {
+        enum Type
+        {
+            InvalidTarget, InvalidDestination, DecodeFailed, UnsupportedInstruction,
+            AllocationFailed, RelocationOutOfRange, InvalidBranchTarget, AlreadyHooked,
+            ProtectionFailed, ThreadFreezeFailed, ThreadContextFailed, TargetChanged,
+            InvalidHook, ProtectionRestoreFailed
+        } type;
+        uintptr_t address{};
+        bool patch_applied{};
+    };
+}
 
 namespace memlib::detail
 {

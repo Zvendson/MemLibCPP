@@ -31,12 +31,12 @@ namespace memlib
 
         inline bool enable_hook()
         {
-            return static_cast<bool>(m_hook.enable());
+            return m_hook.enable() == hook_status::ok;
         }
 
         inline bool disable_hook()
         {
-            return static_cast<bool>(m_hook.disable());
+            return m_hook.disable() == hook_status::ok;
         }
 
         [[nodiscard]] inline bool is_hook_enabled() const noexcept { return m_hook.enabled(); }
@@ -45,7 +45,7 @@ namespace memlib
         {
             try 
             {
-                return static_cast<bool>(m_hook.reset());
+                return m_hook.reset() == hook_status::ok;
             }
             catch (...)
             {
@@ -157,10 +157,9 @@ namespace memlib
     public:
         hook create_inline(void* target, void* detour, inl_hook::Flags flags = inl_hook::Flags::StartDisabled)
         {
-            auto res = inl_hook::create(target, detour, flags);
-            if (!res) return {};
-
-            auto entry = std::make_shared<hook_entry>(std::move(res.value()));
+            inl_hook value;
+            if (inl_hook::create(target, detour, flags, &value) != hook_status::ok) return {};
+            auto entry = std::make_shared<hook_entry>(std::move(value));
 
             {
                 std::scoped_lock lk(m_mutex);
