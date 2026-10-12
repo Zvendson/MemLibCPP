@@ -58,8 +58,8 @@ namespace
             return memlib::address(static_cast<memlib::address::value_type>(next_ip + disp));
         }
 #else
-        UNREFERENCED_PARAMETER(inst);
-        UNREFERENCED_PARAMETER(instr_addr);
+        (void)inst;
+        (void)instr_addr;
 #endif
 
         if (op.mem.base == ZYDIS_REGISTER_NONE && op.mem.index == ZYDIS_REGISTER_NONE)
