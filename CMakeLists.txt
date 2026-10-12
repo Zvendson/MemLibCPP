@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 
 project(MemLib VERSION 0.1.0 LANGUAGES CXX)
 
+option(MEMLIB_BUILD_TESTS "Build MemLib inline hook tests" OFF)
+
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
@@ -26,7 +28,10 @@ set(MEMLIB_PUBLIC_HEADERS
     code/public/memlib/address.hpp
     code/public/memlib/module.hpp
     code/public/memlib/memory.hpp
+    code/public/memlib/hook.h
+    code/public/memlib/c_api.h
     code/public/memlib/hook.hpp
+    code/public/memlib/inline_hook.hpp
     code/public/memlib/thread.hpp
 )
 
@@ -34,6 +39,9 @@ set(MEMLIB_PRIVATE_SOURCES
     code/private/internal.hpp
     code/private/address.cpp
     code/private/hook.cpp
+    code/private/hook_internal.hpp
+    code/private/inline_hook.cpp
+    code/private/c_api.cpp
     code/private/memlib.cpp
     code/private/memory.cpp
     code/private/module.cpp
@@ -43,10 +51,12 @@ set(MEMLIB_PRIVATE_SOURCES
 if (WIN32)
   list(APPEND MEMLIB_PRIVATE_SOURCES
     code/private/os/windows.cpp
+    code/private/os/hook_windows.cpp
   )
 elseif(UNIX)
   list(APPEND MEMLIB_PRIVATE_SOURCES
     code/private/os/linux.cpp
+    code/private/os/hook_linux.cpp
   )
 endif()
 
@@ -70,23 +80,39 @@ if (WIN32)
       Dbghelp
       Zycore
       Zydis
-    PUBLIC
-      safetyhook::safetyhook
   )
 else()
   target_link_libraries(MemLib
     PRIVATE
       Zycore
       Zydis
-    PUBLIC
-      safetyhook::safetyhook
   )
+endif()
+
+if(NOT WIN32)
+  find_package(Threads REQUIRED)
+  target_link_libraries(MemLib PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
 endif()
 
 if (MSVC)
   target_compile_options(MemLib PRIVATE /W4 /permissive-)
 else()
   target_compile_options(MemLib PRIVATE -Wall -Wextra -Wpedantic -fPIC)
+endif()
+
+if(MEMLIB_BUILD_TESTS)
+  enable_testing()
+  include(FetchContent)
+  FetchContent_Declare(
+    googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG 52eb8108c5bdec04579160ae17225d66034bd723
+  )
+  set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+  set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(googletest)
+  add_subdirectory(tests)
 endif()
 
 # -----------------------

@@ -349,20 +349,14 @@ namespace memlib
 
 
 
-    bool free(void* p, size_t size) noexcept
+    bool free(void* p) noexcept
     {
         if (!p)
             return true;
 
-        // On Linux, munmap needs the original length. If size==0, try to infer it from /proc/self/maps,
-        // but only if p equals the region start (safe).
-        if (size == 0)
-        {
-            if (auto r = query(p); r && r->start == reinterpret_cast<uintptr_t>(p))
-                size = static_cast<size_t>(r->end - r->start);
-            else
-                return false;
-        }
+        auto r = query(p);
+        if (!r || r->start != reinterpret_cast<uintptr_t>(p)) return false;
+        const auto size = static_cast<size_t>(r->end - r->start);
 
         return ::munmap(p, size) == 0;
     }

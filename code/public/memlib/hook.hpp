@@ -1,6 +1,6 @@
 #pragma once
 
-#include <safetyhook.hpp>
+#include "inline_hook.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -10,12 +10,6 @@
 
 namespace memlib
 {
-	using hook_context = safetyhook::Context;
-	using inl_hook = safetyhook::InlineHook;
-	using mid_hook = safetyhook::MidHook;
-	using vmt_hook = safetyhook::VmtHook;
-	using vm_hook = safetyhook::VmHook;
-
 	void enter_hookguard();
 	void leave_hookguard();
 	bool is_guarded();
@@ -31,42 +25,33 @@ namespace memlib
 	};
 
     class hook_entry
-    { // NOTE: Wrapper for safetyhook, in case i decide to change the backend (safetyhook).
+    {
     public:
         explicit hook_entry(inl_hook&& in) : m_hook(std::move(in)) {}
 
-        inline void enable_hook()
+        inline bool enable_hook()
         {
-            if (!m_enabled)
-            {
-                (void)m_hook.enable();
-                m_enabled = true;
-            }
+            return m_hook.enable() == hook_status::ok;
         }
 
-        inline void disable_hook()
+        inline bool disable_hook()
         {
-            if (m_enabled)
-            {
-                (void)m_hook.disable();
-                m_enabled = false;
-            }
+            return m_hook.disable() == hook_status::ok;
         }
 
-        [[nodiscard]] inline bool is_hook_enabled() const noexcept { return m_enabled; }
+        [[nodiscard]] inline bool is_hook_enabled() const noexcept { return m_hook.enabled(); }
 
-        inline void reset_hook() noexcept
+        inline bool reset_hook() noexcept
         {
             try 
             {
-                disable_hook(); 
+                return m_hook.reset() == hook_status::ok;
             }
             catch (...)
             {
             }
 
-            m_hook.reset();
-            m_enabled = false;
+            return false;
         }
 
         /// @brief Get a pointer to the target.
@@ -162,7 +147,6 @@ namespace memlib
 
     protected:
         inl_hook m_hook;
-        bool     m_enabled { false };
     };
     using hook = std::shared_ptr<hook_entry>;
 
@@ -173,10 +157,9 @@ namespace memlib
     public:
         hook create_inline(void* target, void* detour, inl_hook::Flags flags = inl_hook::Flags::StartDisabled)
         {
-            auto res = inl_hook::create(target, detour, flags);
-            if (!res) return {};
-
-            auto entry = std::make_shared<hook_entry>(std::move(res.value()));
+            inl_hook value;
+            if (inl_hook::create(target, detour, flags, &value) != hook_status::ok) return {};
+            auto entry = std::make_shared<hook_entry>(std::move(value));
 
             {
                 std::scoped_lock lk(m_mutex);
@@ -186,15 +169,16 @@ namespace memlib
             return entry;
         }
 
-        void disable_all()
+        bool disable_all()
         {
             std::scoped_lock lk(m_mutex);
+            bool success = true;
             auto it = m_hooks.begin();
             while (it != m_hooks.end())
             {
                 if (auto& sp = *it)
                 {
-                    sp->enable_hook();
+                    success = sp->disable_hook() && success;
                     ++it;
                 }
                 else
@@ -202,17 +186,19 @@ namespace memlib
                     it = m_hooks.erase(it);
                 }
             }
+            return success;
         }
 
-        void enable_all()
+        bool enable_all()
         {
             std::scoped_lock lk(m_mutex);
+            bool success = true;
             auto it = m_hooks.begin();
             while (it != m_hooks.end())
             {
                 if (auto& sp = *it)
                 {
-                    sp->enable_hook();
+                    success = sp->enable_hook() && success;
                     ++it;
                 }
                 else
@@ -220,24 +206,27 @@ namespace memlib
                     it = m_hooks.erase(it);
                 }
             }
+            return success;
         }
 
-        void reset_all()
+        bool reset_all()
         {
             std::scoped_lock lk(m_mutex);
+            bool success = true;
             auto it = m_hooks.begin();
             while (it != m_hooks.end())
             {
-                if (auto& sp = *it)
-                {
-                    sp->reset_hook();
-                    ++it;
-                }
-                else
+                if (!*it || (*it)->reset_hook())
                 {
                     it = m_hooks.erase(it);
                 }
+                else
+                {
+                    success = false;
+                    ++it;
+                }
             }
+            return success;
         }
 
     protected:
