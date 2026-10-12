@@ -55,6 +55,8 @@ MEMLIB_API void memlib_flush_icache(void* address, size_t size);
 MEMLIB_API int memlib_is_readable(void* address, size_t bytes);
 MEMLIB_API int memlib_is_writable(void* address, size_t bytes);
 MEMLIB_API int memlib_is_executable(void* address, size_t bytes);
+MEMLIB_API int memlib_read(void* address, void* output, size_t size);
+MEMLIB_API int memlib_write(void* address, const void* input, size_t size);
 
 MEMLIB_API int memlib_parse_pattern(const char* text, memlib_scan_pattern* out);
 MEMLIB_API uintptr_t memlib_find(const memlib_scan_pattern* pattern, uintptr_t start, uintptr_t end, int32_t offset);
@@ -63,11 +65,15 @@ MEMLIB_API uintptr_t memlib_find_xref(const memlib_scan_pattern* pattern, uintpt
 MEMLIB_API uintptr_t memlib_find_combo_xref(const char* pattern, uintptr_t start, uintptr_t end, int32_t offset);
 MEMLIB_API uintptr_t memlib_find_xrefs(const char* const* patterns, size_t count, uintptr_t start, uintptr_t end, int32_t offset);
 MEMLIB_API uintptr_t memlib_find_xrefs_secure(const char* const* patterns, size_t count, uintptr_t start, uintptr_t end, int32_t offset);
+MEMLIB_API size_t memlib_find_all(const memlib_scan_pattern* pattern, uintptr_t start, uintptr_t end, uintptr_t* output, size_t capacity);
+MEMLIB_API size_t memlib_find_all_combo(const char* pattern, uintptr_t start, uintptr_t end, uintptr_t* output, size_t capacity);
 
 MEMLIB_API int memlib_address_valid(uintptr_t address);
 MEMLIB_API int memlib_address_readable(uintptr_t address, size_t bytes);
 MEMLIB_API int memlib_address_writable(uintptr_t address, size_t bytes);
 MEMLIB_API int memlib_address_executable(uintptr_t address, size_t bytes);
+MEMLIB_API int memlib_address_read(uintptr_t address, void* output, size_t size);
+MEMLIB_API int memlib_address_write(uintptr_t address, const void* input, size_t size);
 MEMLIB_API uintptr_t memlib_address_dereference_pointer(uintptr_t address);
 MEMLIB_API uintptr_t memlib_address_dereference_call(uintptr_t address);
 MEMLIB_API uintptr_t memlib_address_resolve_relative(uintptr_t address, int64_t displacement, size_t instruction_length);
@@ -85,6 +91,7 @@ MEMLIB_API int memlib_module_get_info(const memlib_module* module, memlib_module
 MEMLIB_API int memlib_module_section(const memlib_module* module, int section, memlib_section_info* out);
 MEMLIB_API int memlib_module_contains(const memlib_module* module, uintptr_t address, int section);
 MEMLIB_API uintptr_t memlib_module_find(const memlib_module* module, const char* pattern, int section, int32_t offset);
+MEMLIB_API size_t memlib_module_find_all(const memlib_module* module, const char* pattern, int section, uintptr_t* output, size_t capacity);
 
 MEMLIB_API uint32_t memlib_get_pid(void);
 

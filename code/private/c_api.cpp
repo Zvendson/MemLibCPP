@@ -112,6 +112,18 @@ extern "C"
     int memlib_is_readable(void* address, size_t bytes) { return memlib::is_readable(address, bytes) ? 1 : 0; }
     int memlib_is_writable(void* address, size_t bytes) { return memlib::is_writable(address, bytes) ? 1 : 0; }
     int memlib_is_executable(void* address, size_t bytes) { return memlib::is_executable(address, bytes) ? 1 : 0; }
+    int memlib_read(void* address, void* output, size_t size)
+    {
+        if (!address || !output || !memlib::is_readable(address, size)) return 0;
+        std::memcpy(output, address, size);
+        return 1;
+    }
+    int memlib_write(void* address, const void* input, size_t size)
+    {
+        if (!address || !input || !memlib::is_writable(address, size)) return 0;
+        std::memcpy(address, input, size);
+        return 1;
+    }
 
     int memlib_parse_pattern(const char* text, memlib_scan_pattern* out)
     {
@@ -145,10 +157,29 @@ extern "C"
         return value(memlib::find_xrefs_secure(std::span<const char* const>(patterns, count), start, end, offset));
     }
 
+    size_t memlib_find_all(const memlib_scan_pattern* pattern, uintptr_t start, uintptr_t end, uintptr_t* output, size_t capacity)
+    {
+        if (!pattern) return 0;
+        const auto values = memlib::find_all(to_cpp_pattern(*pattern), start, end);
+        const auto count = std::min(values.size(), capacity);
+        for (size_t i = 0; i < count; ++i) output[i] = values[i].value();
+        return values.size();
+    }
+    size_t memlib_find_all_combo(const char* pattern, uintptr_t start, uintptr_t end, uintptr_t* output, size_t capacity)
+    {
+        if (!pattern) return 0;
+        const auto values = memlib::find_all(pattern, start, end);
+        const auto count = std::min(values.size(), capacity);
+        for (size_t i = 0; i < count; ++i) output[i] = values[i].value();
+        return values.size();
+    }
+
     int memlib_address_valid(uintptr_t address) { return memlib::address(address).is_valid() ? 1 : 0; }
     int memlib_address_readable(uintptr_t address, size_t bytes) { return memlib::address(address).is_readable(bytes) ? 1 : 0; }
     int memlib_address_writable(uintptr_t address, size_t bytes) { return memlib::address(address).is_writable(bytes) ? 1 : 0; }
     int memlib_address_executable(uintptr_t address, size_t bytes) { return memlib::address(address).is_executable(bytes) ? 1 : 0; }
+    int memlib_address_read(uintptr_t address, void* output, size_t size) { return memlib_read(reinterpret_cast<void*>(address), output, size); }
+    int memlib_address_write(uintptr_t address, const void* input, size_t size) { return memlib_write(reinterpret_cast<void*>(address), input, size); }
     uintptr_t memlib_address_dereference_pointer(uintptr_t address) { return value(memlib::address(address).dereference_pointer()); }
     uintptr_t memlib_address_dereference_call(uintptr_t address) { return value(memlib::address(address).dereference_call()); }
     uintptr_t memlib_address_resolve_relative(uintptr_t address, int64_t displacement, size_t instruction_length)
@@ -226,6 +257,15 @@ extern "C"
     {
         if (!module || !pattern || section_value < 0 || section_value >= static_cast<int>(memlib::section::max)) return 0;
         return value(module->value.find(pattern, static_cast<memlib::section>(section_value), offset));
+    }
+
+    size_t memlib_module_find_all(const memlib_module* module, const char* pattern, int section_value, uintptr_t* output, size_t capacity)
+    {
+        if (!module || !pattern || section_value < 0 || section_value >= static_cast<int>(memlib::section::max)) return 0;
+        const auto values = module->value.find_all(pattern, static_cast<memlib::section>(section_value));
+        const auto count = std::min(values.size(), capacity);
+        for (size_t i = 0; i < count; ++i) output[i] = values[i].value();
+        return values.size();
     }
 
     uint32_t memlib_get_pid(void) { return memlib::get_pid(); }
